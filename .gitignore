@@ -22,3 +22,10 @@ apps/desktop/build/icon.png
 # Reference only: a read-only copy of the personal computer-mcp, kept to lift Win32 technique
 # from. Never shipped, never imported by the app. The original lives in Projects/mcp/computer-mcp.
 reference/
+
+# Kept on this computer, not in the repo (user, 2026-11-17): the session journal, design notes,
+# and the agent guides.
+context/
+docs/
+CLAUDE.md
+AGENTS.md

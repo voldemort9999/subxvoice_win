@@ -50,12 +50,3 @@ The app holds no vendor keys: speech-to-text and the rewriting go through Supaba
 that a signed-in account unlocks. `.env` at the repo root is developer tuning only
 (`GNANI_MODEL`, `GNANI_LANGUAGE`, `GNANI_FORMAT`, `OPENROUTER_MODEL`) and is read in development
 only — see `.env.example`.
-
-## Docs
-
-- [Agent guide](AGENTS.md) — repo map, rules, how-tos; also the best overview for humans
-- [Features](docs/FEATURES.md) — the full product feature list
-- [Architecture](docs/architecture.md) — how the pieces fit together
-- [Command mode](docs/command-mode.md) — how Follow My Words works
-- [Tech stack](docs/TECH_STACK.md)
-- [Decisions](docs/decisions.md) — why things are the way they are
