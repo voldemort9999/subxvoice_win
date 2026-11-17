@@ -11,6 +11,8 @@ Last updated: 2026-11-14 · after S-018 · `subxvoice-app` `main` (0.4.1 is `841
 uncommitted · website `main` at **`86f926a`** (pulled), live · current journal file **`002`**
 (637 lines; `001` closed at 992).
 
+> **Since 2026-11-17 SUBXVoice is Windows only.** macOS support and dead code were removed in
+> `19ffa7d` (see `docs/decisions.md` 2026-11-17); older journal entries still describe the Mac work.
 > **Since 2026-11-17 the app's main repo is `voldemort9999/subxvoice_win` (`origin`).**
 > `subxvoice-app` is now the secondary remote `app`, frozen at `f0cea3a` (0.4.3) and pushed only
 > when the user asks; the challenge pitch links to its `PITCH.md`. Not yet journalled: 0.4.2
