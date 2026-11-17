@@ -1,4 +1,4 @@
-// Windows-only window chrome. Same exports as platform/mac/Chrome.tsx.
+// The window's chrome and the Windows-specific notes shown in Settings.
 
 /** Windows keeps its native title bar, so the sidebar only needs breathing room above the brand. */
 export function SidebarTop() {
@@ -14,10 +14,6 @@ export function PermissionsIntro() {
       Allow microphone access in Windows Settings. Text can't be typed into apps that run as administrator.
     </p>
   );
-}
-
-export function HotkeyNote() {
-  return null;
 }
 
 export function MicrophoneNote() {

@@ -5,8 +5,8 @@
 **Core is a switchboard with sockets. Everything else is a plug.**
 
 `packages/core` defines interfaces (the sockets) and the pipeline that uses them. Vendors, operating
-systems, databases and MCP servers are plugs that implement those interfaces. Swapping Deepgram for our
-own model, or Mac for Windows, never changes core.
+systems, databases and MCP servers are plugs that implement those interfaces. Swapping Gnani for our
+own model never changes core.
 
 ## Dictation pipeline
 
@@ -20,13 +20,13 @@ Every dictation is saved to local history: audio, text, app and per-stage timing
 
 | Stage | Where | Notes |
 |---|---|---|
-| Hotkey | `Platform.hotkey` | Hold = talk. One binding per mode (exact / style). Mac: fn via the Swift helper. |
-| Mic | `Platform.microphone`, else Web Audio | Mac: Swift helper (AVAudioEngine), on only while held, ~100 ms to start. Without a native mic the pill records through Web Audio and keeps the mic warm for a minute (~300 ms to open). |
+| Hotkey | `Platform.hotkey` | Hold = talk. Ctrl + Win dictates, Ctrl + Alt is Follow My Words; any combination of two or more keys can be set. |
+| Mic | Web Audio in the pill | Kept warm for a minute after each dictation, because it takes ~300 ms to open. |
 | STT | `SttProvider` plug | Dictionary words go in as hints. Never force one language. |
 | Rules | `core/rules.ts` | Dictionary corrections + spacing. Deterministic, ~1 ms, no AI. |
 | Router | `core/router.ts` | Trigger phrase at the start → command. Otherwise dictation. |
 | Style rewrite | `LlmProvider` plug | Only in style mode. Prompt in `core/prompts.ts`. |
-| Insert | `Platform.inserter` | Full clipboard snapshot → Cmd/Ctrl+V → user's clipboard restored. If pasting fails the dictation is still saved to history and the pill says why. |
+| Insert | `Platform.inserter` | Full clipboard snapshot → Ctrl+V → user's clipboard restored. If pasting fails the dictation is still saved to history and the pill says why. |
 | History | `HistoryStore` plug | Local JSON file + WAV recordings today (`apps/desktop/src/main/stores.ts`); SQLite later. Timings per stage are recorded. |
 
 **Roman output is checked, and asked for twice if need be** (`Pipeline.finalise`). A reply still in
@@ -51,7 +51,7 @@ later press — after clearing the 60 s watchdog. A release that finds no run no
 |---|---|---|---|
 | `SttProvider` | `contracts/stt.ts` | `gnani` (streaming), fake | Others via benchmark, local whisper.cpp, our own model |
 | `LlmProvider` | `contracts/llm.ts` | `openrouter`, fake | Our own model |
-| `Platform` (hotkey, microphone, inserter, permissions, context, desktop) | `contracts/platform.ts` | `platform-mac`: hotkey, mic, paste, permissions via the Swift helper. `platform-win`: hotkey + paste via koffi, permissions, open URL | Active-app context, focused text; C# helper on Windows if needed |
+| `Platform` (hotkey, inserter, permissions, context, commands, screen) | `contracts/platform.ts` | `platform-win`: hotkey + paste via koffi, permissions, context, Follow My Words actions, screen control | Active-app context, focused text; C# helper on Windows if needed |
 | `Tool` + `ToolRegistry` | `contracts/tool.ts`, `tools.ts` | — | built-in commands, OS actions, MCP tools |
 | `HistoryStore`, `DictionaryStore` | `contracts/store.ts` | JSON files (`apps/desktop/src/main/stores.ts`), in-memory fakes for tests | SQLite (local), synced dictionary |
 
@@ -87,18 +87,8 @@ Windows (app windows, not the OS):
 |---|---|
 | Main window — dashboard with Home, History, Dictionary, Settings | Built. Created on open, destroyed on close to keep background RAM low |
 | Recording pill — bottom centre of the screen, live waveform, click opens the dashboard | Built. **Never takes focus** (or the paste would land in the wrong app); ignores the mouse except over the pill |
-| Tray / menu bar icon — Open, Quit | Built. The app keeps running after the dashboard closes; quit from here |
+| Tray icon — Open, Quit | Built. The app keeps running after the dashboard closes; quit from here |
 | Command popup ("What should the email be about?") | Planned, also non-focusing |
-
-## Mac helper
-
-`native/mac-helper` is a small Swift program the app starts once (`packages/platform-mac/src/helper.ts`).
-It does what Electron can't do well on macOS: detect the fn key (listen-only event tap, needs Input
-Monitoring), record the mic natively, send ⌘V for paste, and read the Input Monitoring permission.
-Protocol: one JSON object per line — commands on stdin (`watch`, `mic_start`, `mic_stop`, `paste`,
-`permissions`, `request`), events on stdout (`key`, `audio`, `mic_started`, `mic_stopped`, `pasted`,
-`permissions`, `error`). It never reports which
-ordinary key was pressed, only "other". A Windows helper, if built, should speak the same protocol.
 
 ## Where data lives
 
@@ -111,7 +101,5 @@ ordinary key was pressed, only "other". A Windows helper, if built, should speak
 
 ## Releases
 
-`electron-builder` produces `SUBXVoice-mac.dmg` (universal) and `SUBXVoice-windows-setup.exe` and
-publishes them to GitHub Releases. The website links to `releases/latest/download/<file>`, so a new
-release needs no website change. Mac builds must be signed and notarized; Windows builds should be
-signed to avoid SmartScreen warnings.
+`electron-builder` produces `SUBXVoice-windows-setup.exe` and publishes it to GitHub Releases. The website links to `releases/latest/download/<file>`, so a new
+release needs no website change. Builds should be signed to avoid SmartScreen warnings.

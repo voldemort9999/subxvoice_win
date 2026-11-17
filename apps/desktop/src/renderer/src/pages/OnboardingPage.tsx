@@ -7,7 +7,7 @@ import { hotkeyLabel } from "../shared/format";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
 import { useSettings } from "../shared/hooks";
 import { TONE_OPTIONS } from "../shared/tones";
-import { Button, FIELD, Notice, Select } from "../shared/ui";
+import { Button, FIELD, Notice } from "../shared/ui";
 
 type Step = "name" | "hotkey" | "tone";
 
@@ -37,8 +37,8 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
   }, [step]);
 
   const hotkey = settings?.hotkey ?? info?.hotkeys[0]?.keys ?? "ctrl+win";
-  // Follow My Words comes first where it runs (Windows); elsewhere this is the dictation key alone.
-  const follows = Boolean(info?.customHotkeys && (followKey(info) || settings?.commandHotkey));
+  // Follow My Words comes first when it can run; without its engines this is the dictation key alone.
+  const follows = Boolean(followKey(info) || settings?.commandHotkey);
   const askKey = settings?.commandHotkey || followKey(info) || "ctrl+alt";
   const current = STEPS.findIndex((item) => item.id === step);
 
@@ -145,23 +145,11 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
             {follows && (
               <p className="mt-1 mb-3 text-ink-soft">Hold it to type by voice, wherever your cursor is.</p>
             )}
-            {info?.customHotkeys ? (
-              <HotkeyRecorder
-                value={hotkey}
-                presets={info.supportedKeys}
-                onChange={(keys) => update({ hotkey: keys })}
-              />
-            ) : (
-              <Select
-                label="Hotkey"
-                value={hotkey}
-                onChange={(value) => update({ hotkey: value })}
-                options={(info?.supportedKeys ?? []).map((keys) => ({
-                  value: keys,
-                  label: hotkeyLabel(keys),
-                }))}
-              />
-            )}
+            <HotkeyRecorder
+              value={hotkey}
+              presets={info?.supportedKeys ?? []}
+              onChange={(keys) => update({ hotkey: keys })}
+            />
 
             {problem && (
               <div className="mt-3">

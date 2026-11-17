@@ -7,15 +7,13 @@
   "author": "SUBXVoice",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "node scripts/build-mac-helper.mjs && electron-vite dev",
+    "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:mac": "node scripts/build-mac-helper.mjs --universal && node scripts/build-icon.mjs && electron-vite build && electron-builder --mac --publish never",
     "dist:win": "node scripts/build-icon.mjs && electron-vite build && electron-builder --win --publish never",
     "test": "vitest run",
-    "release:mac": "node scripts/build-mac-helper.mjs --universal && node scripts/release.mjs --mac",
-    "release:win": "node scripts/release.mjs --win",
+    "release:win": "node scripts/release.mjs",
     "build:icon": "node scripts/build-icon.mjs"
   },
   "devDependencies": {
@@ -24,7 +22,6 @@
     "@fontsource-variable/noto-sans-devanagari": "^5.3.0",
     "@fontsource/dm-mono": "^5.3.0",
     "@subx/core": "workspace:*",
-    "@subx/platform-mac": "workspace:*",
     "@subx/platform-win": "workspace:*",
     "@subx/providers": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",

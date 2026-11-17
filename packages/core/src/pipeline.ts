@@ -95,7 +95,7 @@ export interface DictationSession {
  * Spoken among Hindi, "Pictures wale folder" came back as "search folder", "features wale folder"
  * and "इस तरह वाले folder" across seven tries, and every one of them searched the wrong place.
  */
-export const COMMAND_TERMS = [
+const COMMAND_TERMS = [
   "Pictures",
   "Documents",
   "Downloads",

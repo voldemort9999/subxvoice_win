@@ -328,8 +328,6 @@ describe("Pipeline intent", () => {
    */
   const asDictation = (llm: FakeLlm) =>
     expect(llm.requests.every((r) => /clean up dictation/.test(r.system))).toBe(true);
-  /** The literal trigger phrase, which skips the classifier entirely. */
-  const TRIGGERED = "write an email to my manager about tomorrow's leave";
 
   it("composes when the classifier is confident", async () => {
     const { pipeline, inserter, history } = composing(ASK, "Subject: Leave\n\nHi,", decider("email", 0.95));

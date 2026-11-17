@@ -96,8 +96,8 @@ export interface AppBucket {
 
 /**
  * Where the dictations went, busiest first. Records with no app name are left out rather than
- * lumped into "Unknown": on macOS the context reader is not built yet, and an "Unknown" bar
- * topping the chart would look like a bug.
+ * lumped into "Unknown": some windows give no readable app name, and an "Unknown" bar topping
+ * the chart would look like a bug.
  */
 export function byApp(records: SessionRecord[], limit = 6): AppBucket[] {
   const apps = new Map<string, AppBucket>();

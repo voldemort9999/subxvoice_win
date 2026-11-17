@@ -29,7 +29,7 @@ export async function deleteRecording(path: string): Promise<void> {
 }
 
 /** 16-bit mono PCM WAV. */
-export function encodeWav({ samples, sampleRate }: AudioClip): Buffer {
+function encodeWav({ samples, sampleRate }: AudioClip): Buffer {
   const dataBytes = samples.length * 2;
   const header = Buffer.alloc(44);
   header.write("RIFF", 0);

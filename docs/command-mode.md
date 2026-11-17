@@ -373,5 +373,4 @@ a design would need a second, zoomed pass and a confidence floor before any clic
 ## Out of scope for now
 
 - Anything inside an app that draws its own screen (BlueStacks, games) — see "Images" above.
-- macOS.
 - Chaining across more than one app in a single sentence beyond launch-then-act.

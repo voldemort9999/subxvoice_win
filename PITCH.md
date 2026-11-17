@@ -47,4 +47,4 @@ The planning and writing run on general LLMs: Gemini 2.5 Flash, Jev and gpt-oss-
   - Transcripts stay on your PC.
   - It needs no admin rights.
 - **Live:** version 0.4.2 has a public installer and auto-updates. The free beta includes 2 hours a day.
-- **Next:** regional languages through Prisma, then macOS.
+- **Next:** regional languages through Prisma.

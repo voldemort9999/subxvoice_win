@@ -1,6 +1,5 @@
 // Writes build/icon.png from the same mark the running app draws. electron-builder turns that
-// PNG into the .ico Windows needs and the .icns macOS needs, so there is no binary icon checked
-// into the repo and nothing to redraw by hand when the logo changes.
+// PNG into the .ico Windows needs, so there is no binary icon checked into the repo and nothing to redraw by hand when the logo changes.
 //
 // PNG is written with zlib alone — an icon is not worth a dependency.
 
@@ -46,5 +45,5 @@ function png(rgba, size) {
 
 const out = join(root, "build", "icon.png");
 mkdirSync(dirname(out), { recursive: true });
-writeFileSync(out, png(Buffer.from(rasterizeMark(SIZE, { plate: true }).buffer), SIZE));
+writeFileSync(out, png(Buffer.from(rasterizeMark(SIZE).buffer), SIZE));
 console.log(`icon → ${out} (${SIZE}x${SIZE})`);

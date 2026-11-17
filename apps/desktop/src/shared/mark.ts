@@ -14,11 +14,11 @@ export const BAR_GAP = 0.055;
 const SUPERSAMPLE = 3;
 
 /** Deep Aubergine — the plate. */
-export const PLATE = { r: 0x3a, g: 0x0f, b: 0x34 };
+const PLATE = { r: 0x3a, g: 0x0f, b: 0x34 };
 /** Ice Silver — the bars. */
-export const BAR = { r: 0xdd, g: 0xe3, b: 0xe8 };
+const BAR = { r: 0xdd, g: 0xe3, b: 0xe8 };
 /** Marigold — the tallest bar only, so the mark carries all three colours at 16px. */
-export const PEAK = { r: 0xea, g: 0xaa, b: 0x00 };
+const PEAK = { r: 0xea, g: 0xaa, b: 0x00 };
 /** The tallest bar's index, which is the one that gets the accent. */
 export const PEAK_BAR = BARS.indexOf(Math.max(...BARS));
 
@@ -60,13 +60,6 @@ function shape(x: number, y: number): { bar: boolean; peak: boolean; plate: bool
   return { bar, peak, plate };
 }
 
-export interface MarkOptions {
-  /** The Aubergine plate behind the bars. The Mac menu bar wants the bars alone. */
-  plate: boolean;
-  /** Grey level of the bars when there is no plate; the tray uses it to sit on light or dark. */
-  shade?: number;
-}
-
 /**
  * Straight RGBA, premultiplied alpha, row-major — what PNG wants. Electron's `createFromBitmap`
  * wants the same bytes in BGRA order, which is one swap away.
@@ -74,9 +67,8 @@ export interface MarkOptions {
  * Uint8Array rather than Buffer: this file is typechecked against the renderer too, which has no
  * Node globals.
  */
-export function rasterizeMark(size: number, options: MarkOptions): Uint8Array {
+export function rasterizeMark(size: number): Uint8Array {
   const buffer = new Uint8Array(size * size * 4);
-  const shade = options.shade ?? 255;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -98,20 +90,13 @@ export function rasterizeMark(size: number, options: MarkOptions): Uint8Array {
       const bar = barHits / samples;
       const peak = peakHits / samples;
       const quiet = bar - peak;
-      const plate = options.plate ? plateHits / samples : 0;
+      const plate = plateHits / samples;
       const offset = (py * size + px) * 4;
 
       // Bars sit on top of the plate, and the tallest of them carries the accent.
-      if (options.plate) {
-        buffer[offset] = quiet * BAR.r + peak * PEAK.r + plate * PLATE.r;
-        buffer[offset + 1] = quiet * BAR.g + peak * PEAK.g + plate * PLATE.g;
-        buffer[offset + 2] = quiet * BAR.b + peak * PEAK.b + plate * PLATE.b;
-      } else {
-        // Tray: one flat colour, because the system tints it anyway.
-        buffer[offset] = bar * shade;
-        buffer[offset + 1] = bar * shade;
-        buffer[offset + 2] = bar * shade;
-      }
+      buffer[offset] = quiet * BAR.r + peak * PEAK.r + plate * PLATE.r;
+      buffer[offset + 1] = quiet * BAR.g + peak * PEAK.g + plate * PLATE.g;
+      buffer[offset + 2] = quiet * BAR.b + peak * PEAK.b + plate * PLATE.b;
       buffer[offset + 3] = 255 * Math.min(1, bar + plate);
     }
   }

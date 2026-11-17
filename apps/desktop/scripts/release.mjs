@@ -14,12 +14,6 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const REPO = "voldemort9999/subxvoice-releases";
 
-const target = process.argv[2];
-if (target !== "--win" && target !== "--mac") {
-  console.error("usage: node scripts/release.mjs --win|--mac");
-  process.exit(1);
-}
-
 function githubToken() {
   if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
   // `git credential fill` prints key=value lines; the password is the token.
@@ -83,7 +77,7 @@ const run = (command, args) => {
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: true,
     env: { ...process.env, GH_TOKEN: token },
   });
   if (result.status !== 0) process.exit(result.status ?? 1);
@@ -95,7 +89,7 @@ console.log("Every installed copy will download this. Ctrl+C now if that is not 
 await ensureRelease();
 run("node", ["scripts/build-icon.mjs"]);
 run("npx", ["electron-vite", "build"]);
-run("npx", ["electron-builder", target, "--publish", "always"]);
+run("npx", ["electron-builder", "--win", "--publish", "always"]);
 
 console.log(`\nDone. SUBXVoice ${version} is live.`);
 console.log(`https://github.com/${REPO}/releases/latest`);

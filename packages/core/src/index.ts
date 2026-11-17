@@ -23,7 +23,7 @@ export type {
   StepResult,
 } from "./agent/types";
 export type * from "./contracts";
-export { type ErrorCode, notImplemented, SubxError } from "./errors";
+export { type ErrorCode, SubxError } from "./errors";
 export {
   type DictationSession,
   type Outcome,

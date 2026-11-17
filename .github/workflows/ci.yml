@@ -7,12 +7,7 @@ on:
 
 jobs:
   check:
-    # Both OSes on every PR, so a Mac change can't silently break Windows (and vice versa).
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

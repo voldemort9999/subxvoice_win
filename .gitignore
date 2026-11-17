@@ -4,14 +4,12 @@ dist/
 .next/
 .turbo/
 coverage/
-native/mac-helper/build/
 *.tsbuildinfo
 *.log
 
 .env*
 !.env.example
 
-.DS_Store
 .vercel
 .claude/settings.local.json
 

@@ -1,13 +1,13 @@
 import { nativeImage } from "electron";
-import { type MarkOptions, rasterizeMark } from "../shared/mark";
+import { rasterizeMark } from "../shared/mark";
 
 /**
  * The app mark, as an Electron image. The geometry lives in `shared/mark.ts` so the installer's
  * icon is generated from the same definition — see `scripts/build-icon.mjs`.
  */
-export function brandIcon(size: number, options: MarkOptions) {
+export function brandIcon(size: number) {
   // Wrapped, not copied, so the swizzle below can use Buffer's bounds-checked accessors.
-  const rgba = Buffer.from(rasterizeMark(size, options).buffer);
+  const rgba = Buffer.from(rasterizeMark(size).buffer);
   // createFromBitmap reads BGRA, so red and blue swap places.
   for (let i = 0; i < rgba.length; i += 4) {
     const red = rgba.readUInt8(i);
@@ -18,4 +18,4 @@ export function brandIcon(size: number, options: MarkOptions) {
 }
 
 /** Taskbar, Alt-Tab and the window's own corner. */
-export const appIcon = () => brandIcon(256, { plate: true });
+export const appIcon = () => brandIcon(256);

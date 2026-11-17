@@ -8,7 +8,6 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 }
 
 const api: SubxApi = {
-  os: process.platform === "win32" ? "win" : "mac",
   auth: {
     state: () => ipcRenderer.invoke(IPC.authState),
     signIn: (email, password) => ipcRenderer.invoke(IPC.authSignIn, email, password),

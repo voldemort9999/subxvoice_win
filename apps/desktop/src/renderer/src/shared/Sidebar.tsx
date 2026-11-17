@@ -1,6 +1,6 @@
-import { SidebarTop } from "@platform/Chrome";
 import type { ComponentType } from "react";
 import type { Usage } from "../../../shared/ipc";
+import { SidebarTop } from "./Chrome";
 import { formatSpan } from "./format";
 import { BookIcon, ChartIcon, HistoryIcon, HomeIcon, SettingsIcon } from "./icons";
 import { Mark } from "./Mark";

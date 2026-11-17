@@ -54,20 +54,13 @@ export const IPC = {
 export interface AppInfo {
   version: string;
   hotkeys: HotkeyBinding[];
-  /** Hotkeys worth suggesting. On macOS this is also the limit; see `customHotkeys`. */
+  /** Hotkeys worth suggesting; any combination of two or more keys can be recorded. */
   supportedKeys: string[];
-  /** True when any key combination can be recorded, rather than only `supportedKeys`. */
-  customHotkeys: boolean;
   /** Which engines are configured. Settings shows a warning when one is missing. */
   providers: { stt: boolean; llm: boolean };
-  /**
-   * True when the OS plug records natively (Mac). That path uses the system input device, so the
-   * in-app microphone picker only applies when this is false.
-   */
-  nativeMicrophone: boolean;
 }
 
-/** User settings. Identical on both OSes; only the allowed hotkey values differ. */
+/** User settings. */
 export interface AppSettings {
   /** One of `AppInfo.supportedKeys`. */
   hotkey: string;
@@ -140,7 +133,6 @@ export type UpdateState =
 
 /** Exposed to the UI as `window.subx` by the preload script. */
 export interface SubxApi {
-  os: "mac" | "win";
   auth: {
     state(): Promise<AccountState>;
     signIn(email: string, password: string): Promise<void>;

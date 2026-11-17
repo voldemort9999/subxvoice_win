@@ -21,8 +21,8 @@ const INPUT = koffi.struct("INPUT", {
   _pad: koffi.array("uint8", 8),
 });
 
-// The DLLs are loaded on first use, not at import: the desktop app imports this package on every
-// OS, and loading a Windows DLL at import time crashes it on macOS.
+// The DLLs are loaded on first use, not at import, so importing this package (tests, app start)
+// costs nothing until a key is actually watched.
 function bind() {
   const lib = koffi.load("user32.dll");
   const kernel = koffi.load("kernel32.dll");

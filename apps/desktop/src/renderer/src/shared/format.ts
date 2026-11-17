@@ -66,19 +66,6 @@ export function streakDays(records: SessionRecord[]): number {
   return streak;
 }
 
-export const totalAudioMs = (records: SessionRecord[]) =>
-  records.reduce((total, record) => total + (record.audioMs ?? 0), 0);
-
-/** Keys whose own name is not what people call them. Everything else is title-cased. */
-export const HOTKEY_LABELS: Record<string, string> = {
-  fn: "fn 🌐",
-  right_option: "right ⌥ Option",
-  right_command: "right ⌘ Command",
-  right_ctrl: "right Ctrl",
-  left_option: "left ⌥ Option",
-  left_ctrl: "left Ctrl",
-};
-
 const KEY_LABELS: Record<string, string> = {
   ctrl: "Ctrl",
   shift: "Shift",
@@ -96,7 +83,6 @@ const KEY_LABELS: Record<string, string> = {
  */
 export function hotkeyLabel(keys: string | undefined): string {
   if (!keys) return "the hotkey";
-  if (HOTKEY_LABELS[keys]) return HOTKEY_LABELS[keys];
   return keys
     .split("+")
     .map((key) => KEY_LABELS[key] ?? (key.length === 1 ? key.toUpperCase() : titleCase(key)))

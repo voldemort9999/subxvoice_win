@@ -14,24 +14,6 @@ files:
 asarUnpack:
   - node_modules/koffi/**
 
-mac:
-  # The Swift helper (hotkey, microphone, permissions). Built by scripts/build-mac-helper.mjs.
-  extraResources:
-    - from: ../../native/mac-helper/build/subx-mac-helper
-      to: subx-mac-helper
-  target:
-    - target: dmg
-      arch: universal
-  # Fixed names (no version) so the website's "latest/download" links never change.
-  # Must match DOWNLOAD_FILES in packages/shared.
-  artifactName: SUBXVoice-mac.${ext}
-  category: public.app-category.productivity
-  hardenedRuntime: true
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    NSMicrophoneUsageDescription: SUBXVoice listens only while you hold the hotkey, to turn your speech into text.
-
 win:
   target: nsis
   artifactName: SUBXVoice-windows-setup.${ext}

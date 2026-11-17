@@ -1,6 +1,6 @@
 # SUBXVoice — Feature List
 
-Platforms: **macOS + Windows** (desktop first)
+Platform: **Windows** (10 and 11)
 
 Core rule: every external engine (STT, LLM, vision, storage) is a pluggable provider — API today, our own model later.
 

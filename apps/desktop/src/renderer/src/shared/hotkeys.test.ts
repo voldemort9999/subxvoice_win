@@ -62,11 +62,6 @@ describe("showing a hotkey to the user", () => {
     expect(hotkeyLabel("ctrl+pageup")).toBe("Ctrl + Page Up");
   });
 
-  it("keeps the names macOS keys are known by", () => {
-    expect(hotkeyLabel("fn")).toBe("fn 🌐");
-    expect(hotkeyLabel("right_option")).toBe("right ⌥ Option");
-  });
-
   it("has something to say before the hotkey is known", () => {
     expect(hotkeyLabel(undefined)).toBe("the hotkey");
   });

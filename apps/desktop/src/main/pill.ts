@@ -36,9 +36,6 @@ export class PillWindow {
       focusable: false,
       alwaysOnTop: true,
       fullscreenable: false,
-      acceptFirstMouse: true,
-      // A non-activating panel on macOS: showing it never steals focus.
-      ...(process.platform === "darwin" ? { type: "panel" } : {}),
       webPreferences: {
         preload: PRELOAD_PATH,
         sandbox: true,

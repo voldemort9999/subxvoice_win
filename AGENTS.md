@@ -1,30 +1,26 @@
 # SUBXVoice — Agent Guide
 
-SUBXVoice is a voice-typing desktop app for **macOS and Windows**: hold a hotkey, speak (any language,
-switching mid-sentence is fine), and clean text is pasted at the cursor in any app. Later: voice
-commands ("write a mail"), actions via MCP, history with audio replay, stats, teams.
+SUBXVoice is a voice desktop app for **Windows**. Hold Ctrl + Win and speak (any language, switching
+mid-sentence is fine): clean text is pasted at the cursor in any app. Hold Ctrl + Alt (Follow My
+Words) and say what you need done: it is done on the PC.
 
 **Start here:** [`readme.md`](readme.md) shows what works today and how a release is cut.
 Read `docs/architecture.md` before changing anything in `packages/core`.
 
-This repo is private and holds the desktop app and its Supabase functions. The website is a
-separate repo (`voldemort9999/subxvoice`), and installers go to a public one
-(`voldemort9999/subxvoice-releases`) — see `readme.md`.
+This repo holds the desktop app and its Supabase functions. The website is a separate repo
+(`voldemort9999/subxvoice`), and installers go to a public one (`voldemort9999/subxvoice-releases`)
+— see `readme.md`.
 
 ## Repo map
 
-| Path | What | Owner |
-|---|---|---|
-| `packages/core` | Plug-point interfaces, pipeline, dictionary rules, router, tool registry, fakes | both |
-| `packages/providers` | STT / LLM plugs — one file per vendor | both |
-| `packages/platform-mac` | macOS plug: hotkey, paste, permissions, context, desktop actions | Mac owner |
-| `packages/platform-win` | Windows plug — **same file names** as platform-mac | Windows owner |
-| `packages/mcp` | MCP client + server (not built yet) | both |
-| `apps/desktop` | Electron app: `src/main` (Node side), `src/preload` (bridge), `src/renderer` (React UI) | both |
-| `native/mac-helper` | Swift helper: fn hotkey (event tap), native mic (AVAudioEngine), permission checks | Mac owner |
-| `docs/` | Features, tech stack, architecture, decisions | both |
-
-Planned, not created yet: `apps/api` (Hono backend), `native/win-helper` (C#).
+| Path | What |
+|---|---|
+| `packages/core` | Plug-point interfaces, pipeline, dictionary rules, router, Follow My Words loop, fakes |
+| `packages/providers` | STT / LLM / decider plugs — one file per vendor |
+| `packages/platform-win` | The Windows plug: hotkey, paste, permissions, context, commands, screen control |
+| `apps/desktop` | Electron app: `src/main` (Node side), `src/preload` (bridge), `src/renderer` (React UI) |
+| `supabase/` | Edge Functions that hold the vendor keys behind the user's session |
+| `docs/` | Features, tech stack, architecture, decisions |
 
 ## Commands (run from the repo root)
 
@@ -41,8 +37,8 @@ pnpm dev:desktop      # run the Electron app
 
 1. **Core never imports a vendor SDK, an OS API, Electron or a database.** It only uses the interfaces in
    `packages/core/src/contracts`. New capability = new interface in core + a plug somewhere else.
-2. **OS-specific code lives only in `platform-mac` / `platform-win`** (and `renderer/src/platform/mac|win`
-   for UI). Keep file names mirrored between the two.
+2. **Windows API code lives only in `platform-win`.** Core and the app reach it through the
+   `Platform` interface.
 3. **No API keys in the app.** Providers get short-lived tokens from our backend.
 4. **Private content stays on the device.** Audio, transcripts and history are never sent to our server
    and never logged. Log timings and errors only.
@@ -56,8 +52,8 @@ pnpm dev:desktop      # run the Electron app
 
 - **Add an STT/LLM vendor:** `packages/providers/src/stt/<vendor>.ts` implementing `SttProvider`
   (or `llm/<vendor>.ts` → `LlmProvider`), then one `case` in `packages/providers/src/index.ts`.
-- **Implement an OS feature:** fill in the stub in `platform-mac/src/<file>.ts`; the Windows owner does
-  the same file in `platform-win`. Stubs throw `notImplemented(...)` until done.
+- **Add an OS feature:** an interface in `packages/core/src/contracts` (if it is new), implemented in
+  `platform-win`.
 - **Add a UI ↔ main call:** channel + type in `apps/desktop/src/shared/ipc.ts` → handler in
   `src/main/index.ts` → expose in `src/preload/index.ts`.
 - **Add a voice command:** trigger phrases in `packages/core/src/router.ts`, behaviour as a `Tool`.
@@ -68,18 +64,17 @@ pnpm dev:desktop      # run the Electron app
 - Shells started from VS Code may have `ELECTRON_RUN_AS_NODE=1`, which makes Electron run as plain Node.
   If the app won't open, run `unset ELECTRON_RUN_AS_NODE` first.
 - Desktop dependencies all go in `devDependencies` so electron-vite bundles them. Native Node modules
-  (e.g. koffi on Windows, better-sqlite3 later) are the exception — put them in `dependencies`, mark them
-  `external` in `electron.vite.config.ts`, unpack them in `electron-builder.yml`, and allow their install
-  scripts under `allowBuilds` in `pnpm-workspace.yaml`.
-- Every package is imported on every OS. Never load an OS-specific library at import time (e.g.
-  `koffi.load("user32.dll")`) — load it on first use, or the app crashes on the other OS.
+  (koffi) are the exception — put them in `dependencies`, mark them `external` in
+  `electron.vite.config.ts`, unpack them in `electron-builder.yml`, and allow their install scripts
+  under `allowBuilds` in `pnpm-workspace.yaml`.
+- Load Windows DLLs on first use, never at import time (e.g. `koffi.load("user32.dll")`), so tests and
+  app start do not pay for them.
 - Line endings are LF everywhere (`.gitattributes`); Windows checkouts would otherwise fail the formatter.
-- Mac development needs Xcode or its Command Line Tools: `pnpm dev:desktop` builds the Swift helper first.
-- API keys for development live in `.env` at the repo root (copy `.env.example`). Only
-  `apps/desktop/src/main/providers.ts` reads them, and only when the app is not packaged. In production
-  keys stay on the backend. Never commit `.env`, never use `VITE_`-prefixed variables for keys.
-- `DOWNLOAD_FILES` in `packages/shared` must match `artifactName` in `apps/desktop/electron-builder.yml`.
-- TypeScript is pinned to 5.9 on purpose (Next.js needs the JS compiler API).
+- Development settings live in `.env` at the repo root (copy `.env.example`). Only
+  `apps/desktop/src/main/providers.ts` reads it, and only when the app is not packaged. Vendor keys
+  stay on the backend. Never commit `.env`, never use `VITE_`-prefixed variables for keys.
+- `artifactName` in `apps/desktop/electron-builder.yml` is fixed (no version) because the website's
+  download button links to `releases/latest/download/SUBXVoice-windows-setup.exe`.
 
 <!-- BEGIN:turborepo-agent-rules -->
 

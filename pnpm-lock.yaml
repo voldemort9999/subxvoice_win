@@ -42,9 +42,6 @@ importers:
       '@subx/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@subx/platform-mac':
-        specifier: workspace:*
-        version: link:../../packages/platform-mac
       '@subx/platform-win':
         specifier: workspace:*
         version: link:../../packages/platform-win
@@ -102,25 +99,6 @@ importers:
       vitest:
         specifier: ^5.0.2
         version: 5.0.2(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0))
-
-  packages/mcp:
-    dependencies:
-      '@subx/core':
-        specifier: workspace:*
-        version: link:../core
-
-  packages/platform-mac:
-    dependencies:
-      '@subx/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.0
-        version: 24.19.0
-      electron:
-        specifier: ^44.4.5
-        version: 44.4.5
 
   packages/platform-win:
     dependencies:

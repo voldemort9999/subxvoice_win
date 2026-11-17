@@ -86,9 +86,9 @@ export function fakePlatform(): Platform & { inserter: FakeInserter } {
   return {
     os: "fake",
     hotkey: {
-      defaultBindings: () => [{ keys: "right_option", mode: "exact" }],
-      supportedKeys: () => ["right_option", "fn"],
-      accepts: (keys: string) => ["right_option", "fn"].includes(keys),
+      defaultBindings: () => [{ keys: "ctrl+win", mode: "exact" }],
+      supportedKeys: () => ["ctrl+win", "ctrl+alt"],
+      accepts: (keys: string) => ["ctrl+win", "ctrl+alt"].includes(keys),
       register: async () => {},
       unregisterAll: async () => {},
     },
@@ -100,6 +100,5 @@ export function fakePlatform(): Platform & { inserter: FakeInserter } {
       openSettings: async () => {},
     },
     context: { current: async () => ({ appName: "Fake App" }) },
-    desktop: { openApp: async () => {}, openUrl: async () => {} },
   };
 }

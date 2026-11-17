@@ -102,19 +102,6 @@ export const ChartIcon = ({ className }: IconProps) => (
   </Icon>
 );
 
-export const BoltIcon = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
-  </Icon>
-);
-
-export const ClockIcon = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 7.5V12l3.5 2" />
-  </Icon>
-);
-
 export const SunIcon = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="12" cy="12" r="4.5" />
@@ -139,19 +126,5 @@ export const DownloadIcon = ({ className }: IconProps) => (
 export const FolderIcon = ({ className }: IconProps) => (
   <Icon className={className}>
     <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2a2 2 0 0 1 1.6.8L11.5 7.5h7A2.5 2.5 0 0 1 21 10v7.5A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5Z" />
-  </Icon>
-);
-
-export const CalendarIcon = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <rect x="3" y="5" width="18" height="16" rx="2.5" />
-    <path d="M3 10h18M8 3v4M16 3v4" />
-  </Icon>
-);
-
-export const AppWindowIcon = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <rect x="3" y="4" width="18" height="16" rx="2.5" />
-    <path d="M3 9h18" />
   </Icon>
 );

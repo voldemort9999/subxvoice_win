@@ -1,143 +1,82 @@
 # SUBXVoice — Tech Stack
 
-One language everywhere: **TypeScript** (Python only for future ML work).
+One language everywhere: **TypeScript**. The app runs on **Windows 10 and 11**.
 
 ## Desktop App
 | Part | Tech |
 |---|---|
 | App shell | Electron + electron-vite |
-| Mic capture | Mac: Swift helper (AVAudioEngine), on only while the key is held. Fallback: Web Audio |
-| Hold-to-talk hotkey | Mac: Swift helper event tap, default fn (🌐). Windows: `GetAsyncKeyState` polling via koffi, default Ctrl + Win |
-| Paste at cursor | Full clipboard snapshot → Cmd/Ctrl+V → restore. Mac: ⌘V from the Swift helper; Windows: `SendInput` via koffi |
-| Active app / title / URL | get-windows (planned) |
-| Reading focused text, edit detection | Native helper — Swift (Mac, `native/mac-helper`), C# (Windows, planned) |
-| Local storage | JSON files + WAV recordings today (`apps/desktop/src/main/stores.ts`); SQLite + Drizzle later |
-| Token storage | Electron safeStorage (planned, with login) |
-| Installer | electron-builder — DMG (Mac), NSIS .exe (Windows) |
-| Auto-update | electron-updater + GitHub Releases (planned) |
+| Mic capture | Web Audio in the pill window, kept warm for a minute after each dictation |
+| Hold-to-talk hotkey | `GetAsyncKeyState` polling via koffi, default Ctrl + Win (dictation) and Ctrl + Alt (Follow My Words) |
+| Paste at cursor | Full clipboard snapshot → Ctrl+V via `SendInput` (koffi) → restore |
+| Active app / window title | The foreground window, through Win32 |
+| Follow My Words actions | One PowerShell process with C# interop (`packages/platform-win/src/commands.ts`, `interop.ts`) |
+| Screen control | UI Automation (UIA3), read as text — no screenshots |
+| Local storage | JSON files + WAV recordings (`apps/desktop/src/main/stores.ts`) |
+| Token storage | Electron safeStorage (the refresh token only) |
+| Installer | electron-builder — NSIS .exe |
+| Auto-update | electron-updater + GitHub Releases (`voldemort9999/subxvoice-releases`) |
 
-Rule: the renderer (UI) never touches the DB, network or OS directly — it asks the main process through a typed preload bridge.
+Rule: the renderer (UI) never touches the disk, network or OS directly — it asks the main process through a typed preload bridge.
 
-## GUI (same on Mac and Windows)
-In use today:
-
+## GUI
 | Part | Tech |
 |---|---|
 | Framework | React + TypeScript |
-| Styling | Tailwind CSS v4 with design tokens in `renderer/src/styles.css` (cobalt accent is reserved for voice) |
+| Styling | Tailwind CSS v4 with design tokens (see `docs/design.md`) |
 | Icons | Small inline SVG set in `renderer/src/shared/icons.tsx` |
-| Navigation | Plain React state (four pages) |
-| Charts | The "voice strip" bars are plain divs |
+| Navigation | Plain React state |
 | Audio playback | `<audio>` with a Blob of the local WAV |
-| Font | system-ui (SF Pro on Mac, Segoe UI on Windows) |
-
-Add these only when a screen actually needs them: shadcn/ui (components), Motion (animation), Zustand
-(shared state), TanStack Query (backend data), TanStack Router (more pages), react-hook-form + Zod (big
-forms), Recharts (real charts), wavesurfer.js (waveforms), TanStack Virtual (very long lists), i18next.
 
 ### App windows
 | Window | Notes |
 |---|---|
-| Main window | Built: Home (stats), History, Dictionary, Settings. Planned: Shortcuts, Account |
-| Recording pill | Built: small, transparent, always on top, **never takes focus** (otherwise the paste goes to the wrong app) |
-| Permissions | Built into Settings (plus a banner on Home when one is missing). A first-run walkthrough is planned |
-| Command popup | Planned: "What should the email be about?" — near the cursor, also non-focusing |
-| Tray / menu bar | Built: Electron Tray with Open / Quit |
-
-### Only these parts differ per OS (`platform/mac`, `platform/win`)
-| | Mac | Windows |
-|---|---|---|
-| Icon location | Menu bar (monochrome template icon), optional hidden Dock icon | System tray |
-| Title bar | `hiddenInset` + traffic lights | Native title bar today; `titleBarOverlay` / Mica later |
-| Permissions | Mic, Accessibility, Input Monitoring | Mic |
-| Default hotkey | fn (🌐) | Ctrl + Win |
-| Font | system-ui → SF Pro | system-ui → Segoe UI Variable |
+| Main window | Dashboard, History, Insights, Dictionary, Settings; sign-in and onboarding first |
+| Recording pill | Small, transparent, always on top, **never takes focus** (otherwise the paste goes to the wrong app) |
+| Tray | Electron Tray with Open / Quit |
 
 ## Speech and language engines
 | Part | Tech |
 |---|---|
 | Speech-to-text | Gnani realtime (`prisma-v3.0`), streamed over a websocket while the user speaks; `hi-IN` covers Hindi + English |
-| Rewriting / Roman script | OpenRouter → `openai/gpt-oss-120b`, routed to Cerebras first, Groq as fallback |
-| Keys | `.env` in development (main process only, never packaged); backend tokens in production |
+| Dictation rewriting | Gemini 3.5 Flash Lite (Google priority tier) racing `openai/gpt-oss-120b` on Groq, via OpenRouter |
+| Follow My Words planning | Gemini 2.5 Flash writes the steps; Jev picks each action or on-screen element |
+| Keys | On the backend only: Supabase Edge Functions unlocked by the user's session |
 
 ## Backend
 | Part | Tech |
 |---|---|
-| API | Hono (TypeScript), versioned `/v1` |
-| Database + Auth | Supabase (Postgres, Google + email login) |
-| ORM | Drizzle |
-| Validation / shared types | Zod (`packages/shared`) |
-| Rate limit / cache | Upstash Redis |
-| Background jobs | Inngest |
-| Deploy | Railway → Cloudflare Workers when scaling |
+| Accounts | Supabase Auth, email and password |
+| Vendor proxies | Supabase Edge Functions (`supabase/functions/stt`, `llm`, `usage`) |
+| Daily limit | Two hours of listening per account, counted on the server |
 
-## Website + Team Dashboard
-Next.js on Vercel.
+## Website
+TanStack Start on Vercel, in its own repo (`voldemort9999/subxvoice`).
 
 ## Where Data Lives
 | Data | Location |
 |---|---|
-| Audio, transcripts, history | Device only |
-| Dictionary, shortcuts, settings | Device + synced |
-| Stats (numbers only) | Postgres |
-| Teams | Postgres |
-| STT / LLM API keys | Backend only — app gets short-lived tokens |
+| Audio, transcripts, history, dictionary | Device only |
+| Seconds listened (for the daily limit) | Supabase |
+| STT / LLM API keys | Backend only |
 
 ## Tooling
 | Part | Tech |
 |---|---|
 | Monorepo | pnpm workspaces + Turborepo |
 | Lint + format | Biome |
-| Tests | Vitest, Playwright |
-| Errors / crashes | Sentry |
-| Analytics + feature flags | PostHog |
-| CI/CD | GitHub Actions (Mac + Windows builds, signing, release) |
-| ML / own model (later) | Python |
+| Tests | Vitest |
+| CI | GitHub Actions on Windows (`pnpm check`, `pnpm build`) |
 
 ## Repo Layout
 ```
 subxvoice/
 ├── apps/
-│   ├── desktop/        Electron (main = core + OS plugs, renderer = UI)
-│   ├── api/            Hono backend            (planned)
-│   └── web/            Next.js website
+│   └── desktop/        Electron (main = core + the Windows plug, renderer = UI)
 ├── packages/
-│   ├── core/           interfaces (plug points) + pipeline + rules + router
-│   ├── providers/      STT / LLM plugs
-│   ├── platform-mac/
-│   ├── platform-win/
-│   ├── mcp/            MCP client + server     (types only for now)
-│   └── shared/         Zod types shared by app, api, web
-└── native/
-    ├── mac-helper/     Swift (hotkey, mic, permissions)
-    └── win-helper/     C# (planned)
+│   ├── core/           interfaces (plug points) + pipeline + rules + router + Follow My Words loop
+│   ├── providers/      STT / LLM / decider plugs
+│   └── platform-win/   the Windows plug
+├── supabase/           Edge Functions
+└── docs/
 ```
-
-## Must-haves People Forget
-1. Code signing + Mac notarization (Apple Developer $99/yr, Windows cert).
-2. Auto-update from the first release.
-3. No API keys inside the app.
-4. Per-user usage limits and cost tracking (STT is billed per minute).
-5. Versioned API — old app versions keep calling it.
-6. Remote config to switch providers without an app update.
-7. Separate dev / staging / prod.
-8. Never log transcripts — only timings and errors.
-9. Privacy policy (India DPDP Act) before launch.
-10. Log latency of every pipeline stage.
-
-## Reserved Space: Offline Model (not decided)
-Nothing is built for this now. The design just keeps it possible:
-- A local model would be one more `SttProvider` plug (e.g. whisper.cpp running as a sidecar process).
-- It would be downloaded on demand (~400–600 MB), never bundled in the installer.
-- A setting would choose Cloud / Auto / Offline.
-
-## Build Order
-1. ✅ Plug-point interfaces, pipeline, rules, router (unit-tested)
-2. ✅ Mac: fn hotkey + native mic (Swift helper), recording pill, tray, dashboard
-3. ✅ Local history (with audio playback) + dictionary
-4. ✅ Website with download buttons
-5. ✅ Speech-to-text (Gnani, streaming) → paste at the cursor, on Mac and Windows
-6. ✅ Windows hotkey + paste; Roman-script output via OpenRouter; Settings (hotkey, script, mic)
-7. ⏳ Style mode (LLM), voice commands
-8. ⏳ Backend (login, sync, stats), installers, signing, auto-update
-9. ⏳ Teams, MCP

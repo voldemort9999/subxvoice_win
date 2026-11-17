@@ -39,7 +39,7 @@ export function DashboardPage({
   const permissions = usePermissions();
   if (!records) return null;
 
-  // "unknown" (e.g. Input Monitoring on Mac, which Electron can't read) is not treated as missing.
+  // "unknown" (a state Windows could not read) is not treated as missing.
   const missingPermission = permissions?.some(
     (permission) => permission.state === "denied" || permission.state === "not_asked",
   );

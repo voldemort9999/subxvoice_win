@@ -1,7 +1,8 @@
 # SUBXVoice — orientation
 
-Voice-typing desktop app for **macOS and Windows**: hold a hotkey, speak (any language, switching
-mid-sentence is fine), and clean text is pasted at the cursor in whatever app has focus.
+Voice desktop app for **Windows**: hold a hotkey, speak (any language, switching mid-sentence is
+fine), and clean text is pasted at the cursor in whatever app has focus. Hold the other key
+(Follow My Words) and what you say is done on the PC.
 
 **Pushes go to `origin` = `voldemort9999/subxvoice_win`, the main repo since 2026-11-17.**
 `app` = `voldemort9999/subxvoice-app` is the secondary copy; push there only when the user asks.
@@ -39,7 +40,7 @@ One dictation, end to end:
 hotkey down ─► DictationController.start ─► workflow.open ─► Pipeline.open (STT socket opens now)
                                                           └─► mic.start, chunks pushed live
 hotkey up   ─► mic.stop ─► session.finish ─► Gnani commit ─► dictionary rules ─► router
-                        ─► LLM (script / style) ─► inserter (clipboard + Ctrl/⌘V) ─► history
+                        ─► LLM (script / style) ─► inserter (clipboard + Ctrl+V) ─► history
                                                                       audio saved after the paste
 ```
 
@@ -55,8 +56,6 @@ unit-tested without a microphone.
 
 - **Core imports no vendor SDK, no OS API, no Electron, no database.** New capability = new
   interface in `contracts/` + a plug elsewhere.
-- **`platform-mac` and `platform-win` mirror each other's file names.** Same for
-  `renderer/src/platform/mac|win`.
 - **Desktop dependencies go in `devDependencies`** so electron-vite bundles them. Native modules
   (`koffi`) are the exception: `dependencies`, `external` in `electron.vite.config.ts`, and
   `asarUnpack` in `electron-builder.yml`.
@@ -85,9 +84,8 @@ unit-tested without a microphone.
   native binding never unpacks and the app dies at import.
 - Live provider tests skip themselves without keys, which is how CI stays green. Absence of
   failures there does not mean the vendors were exercised.
-- **`platform-win` is imported on macOS too.** Never call a Windows API at import time — load
-  `user32.dll` on first use. A top-level `koffi.load` crashed the Mac app on startup.
-- `clipboard.ts` exists in both platform packages and the two must stay identical.
+- **Never call a Windows API at import time** — load `user32.dll` on first use, so tests and app
+  start do not pay for it.
 - Electron creates `userData` **before the main script runs**, so "does the folder exist" says
   nothing about whether the app has ever stored anything there. See `migrateUserData`.
 - electron-builder publishes drafts by default, and uploads artifacts concurrently with each

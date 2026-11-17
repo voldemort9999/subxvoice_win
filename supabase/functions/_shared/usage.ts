@@ -5,7 +5,7 @@
 // the app reporting honestly.
 
 /** Two hours of speech a day. Generous for dictation; the point is a ceiling, not a budget. */
-export const DAILY_LIMIT_SECONDS = 2 * 60 * 60;
+const DAILY_LIMIT_SECONDS = 2 * 60 * 60;
 
 /** 16 kHz, 16-bit mono: the only format the relay carries. */
 const BYTES_PER_SECOND = 16000 * 2;

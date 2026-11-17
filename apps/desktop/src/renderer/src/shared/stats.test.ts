@@ -121,7 +121,7 @@ describe("grouping for the charts", () => {
       record({ context: { appName: "Code" }, finalText: "a b" }),
       record({ context: { appName: "Code" }, finalText: "c" }),
       record({ context: { appName: "chrome" }, finalText: "d" }),
-      // No app name: macOS cannot read one yet, and an "Unknown" bar would look like a bug.
+      // No app name: some windows give none, and an "Unknown" bar would look like a bug.
       record({ finalText: "e" }),
     ]);
     expect(apps.map((app) => app.name)).toEqual(["Code", "chrome"]);

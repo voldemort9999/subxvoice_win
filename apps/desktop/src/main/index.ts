@@ -24,7 +24,7 @@ import {
 import { Account } from "./auth";
 import { appIcon } from "./brand";
 import { DictationController } from "./dictation";
-import { nativeMic, PillMic } from "./mic";
+import { PillMic } from "./mic";
 import { PillWindow } from "./pill";
 import { createPlatform } from "./platform";
 import { createEngines, loadDevEnv } from "./providers";
@@ -117,7 +117,6 @@ function openMainWindow(): void {
   // to put it back — it used to touch only the main window, which is why force-quitting was the
   // only thing that worked.
   pillWindow?.revive();
-  if (process.platform === "darwin") app.focus({ steal: true });
   if (mainWindow) {
     // A dead renderer leaves the window as a blank white rectangle, and showing it again shows
     // the same blank rectangle. Reload first, so opening the app is a real recovery.
@@ -134,7 +133,6 @@ function openMainWindow(): void {
     minWidth: 760,
     minHeight: 520,
     show: false,
-    titleBarStyle: platform.os === "mac" ? "hiddenInset" : "default",
     webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
   });
   mainWindow.on("ready-to-show", () => mainWindow?.show());
@@ -313,10 +311,7 @@ async function start(): Promise<void> {
       version: app.getVersion(),
       hotkeys: await bindings(),
       supportedKeys: platform.hotkey.supportedKeys(),
-      // Windows watches any combination; macOS only the fixed set, so Settings offers a list there.
-      customHotkeys: platform.hotkey.accepts("ctrl+shift+f9"),
       providers: { stt: !!engines.stt, llm: !!engines.llm },
-      nativeMicrophone: !!platform.microphone,
     }),
   );
   ipcMain.handle(IPC.openRecordingsFolder, async () => {
@@ -359,9 +354,8 @@ async function start(): Promise<void> {
 
   const pill = new PillWindow();
   pillWindow = pill;
-  // Native mic when the OS plug has one (Mac: Swift helper); otherwise Web Audio in the pill.
+  // The mic runs as Web Audio inside the pill window.
   const pillMic = new PillMic(pill);
-  const mic = platform.microphone ? nativeMic(platform.microphone) : pillMic;
   const pipeline = engines.stt
     ? new Pipeline({
         stt: engines.stt,
@@ -393,7 +387,7 @@ async function start(): Promise<void> {
 
   const dictation = new DictationController(
     pill,
-    mic,
+    pillMic,
     createWorkflow({
       pipeline,
       problems: engines.problems,
@@ -502,14 +496,12 @@ async function start(): Promise<void> {
 }
 
 app.whenReady().then(() => {
-  // Windows and Linux draw the menu inside our own window, where File/Edit/View belongs to no
-  // feature this app has. macOS keeps its menu: it is the system menu bar, and dropping it would
-  // take the app menu and the standard editing shortcuts with it.
-  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
+  // Windows draws the menu inside our own window, where File/Edit/View belongs to no feature this
+  // app has.
+  Menu.setApplicationMenu(null);
   // A swallowed startup failure looks exactly like a window that never opens, which is not a
   // thing anyone can debug from the outside.
   start().catch((error) => console.error("SUBXVoice failed to start:", error));
-  app.on("activate", openMainWindow);
 });
 
 // Someone tried to open a second copy — almost always a double-click on the shortcut while the

@@ -1,6 +1,6 @@
-import { HotkeyNote, MicrophoneNote, PermissionsIntro } from "@platform/Chrome";
 import type { WritingTone } from "@subx/core";
 import type { AppInfo, UpdateState } from "../../../shared/ipc";
+import { MicrophoneNote, PermissionsIntro } from "../shared/Chrome";
 import { followKey } from "../shared/follow";
 import { hotkeyLabel } from "../shared/format";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
@@ -37,7 +37,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
 
   return (
     <div className="space-y-10">
-      {info?.customHotkeys && follows && (
+      {info && follows && (
         <Section title="Follow My Words">
           <Field
             label="Key"
@@ -66,27 +66,11 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
           label="Hotkey"
           hint="Hold to dictate, let go to stop. Press any other key while holding to cancel."
         >
-          {info?.customHotkeys ? (
-            <HotkeyRecorder
-              value={hotkey}
-              presets={info.supportedKeys}
-              onChange={(keys) => update({ hotkey: keys })}
-            />
-          ) : (
-            // macOS watches a fixed set of keys, so there is a list to pick from instead.
-            <Select
-              label="Hotkey"
-              value={hotkey}
-              onChange={(value) => update({ hotkey: value })}
-              options={(info?.supportedKeys ?? []).map((keys) => ({
-                value: keys,
-                label: hotkeyLabel(keys),
-              }))}
-            />
-          )}
-          <div className="mt-2 text-xs text-ink-soft">
-            <HotkeyNote />
-          </div>
+          <HotkeyRecorder
+            value={hotkey}
+            presets={info?.supportedKeys ?? []}
+            onChange={(keys) => update({ hotkey: keys })}
+          />
         </Field>
 
         <Field
@@ -116,8 +100,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
               : `Used while you hold ${hotkeyLabel(hotkey)}.`
           }
         >
-          {/* With a native mic (Mac) the system input device is used, so the picker would do nothing. */}
-          {info && !info.nativeMicrophone && (
+          {info && (
             <Select
               label="Microphone"
               value={settings?.microphoneId ?? ""}

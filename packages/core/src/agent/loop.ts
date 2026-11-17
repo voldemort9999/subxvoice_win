@@ -65,7 +65,7 @@ export const ARGS_SYSTEM =
  * earlier result ("Close 1 window") instead of naming its target, and one request typed the same
  * text twice.
  */
-export const SPLIT_SYSTEM =
+const SPLIT_SYSTEM =
   "You turn what the user said to their computer into the actions it asks for, in order. What they " +
   "said comes from speech recognition: Hindi, English or a mix, possibly in Devanagari, and names " +
   "are often misheard — an app may arrive as a word that only sounds like it. Each step is one short " +
@@ -450,7 +450,7 @@ async function fillArgs(
   return args;
 }
 
-export const SECOND_ACTION_SYSTEM =
+const SECOND_ACTION_SYSTEM =
   "You choose which action carries out one step on the user's computer. Reply with only the action's " +
   'id, such as "open_web", or "none" if neither does.';
 

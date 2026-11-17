@@ -1,5 +1,4 @@
-﻿import { TITLE_BAR_DRAG } from "@platform/Chrome";
-import { useState } from "react";
+﻿import { useState } from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -7,6 +6,7 @@ import { InsightsPage } from "./pages/InsightsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
+import { TITLE_BAR_DRAG } from "./shared/Chrome";
 import { followKey } from "./shared/follow";
 import { hotkeyLabel } from "./shared/format";
 import { useAccount, useAppInfo, useTheme, useUsage } from "./shared/hooks";
@@ -30,7 +30,8 @@ export function App() {
   const info = useAppInfo();
   const usage = useUsage();
   const hotkey = hotkeyLabel(info?.hotkeys[0]?.keys);
-  // Absent where Follow My Words cannot run (macOS), and the UI then speaks of dictation alone.
+  // Absent when Follow My Words cannot run (its engines are missing), and the UI then speaks of
+  // dictation alone.
   const follow = followKey(info);
   const followLabel = follow ? hotkeyLabel(follow) : undefined;
   // Dictation runs on the account's session, so without one there is nothing the app can do.

@@ -105,6 +105,6 @@ default; the theme key is `subx.theme.v2` so installs that stored the old dark d
 - **The pill** is always Aubergine with Silver bars; the newest bar is Marigold.
 - **One mark.** `shared/mark.ts` exports the geometry; `renderer/src/shared/Mark.tsx` draws it in the
   sidebar and on sign-in, `main/brand.ts` for the window and tray, `build-icon.mjs` for the installer.
-  The Windows tray uses the full mark; the Mac menu bar a template of the bars alone.
+  The tray uses the full mark, plate included, so it shows on light and dark taskbars.
 - Fonts are bundled from `@fontsource` (imported in `main.tsx` and `pill/main.tsx`); the window's
   CSP allows only `'self'` and it has to work offline.

@@ -305,7 +305,7 @@ function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-export const SECOND_OPINION_SYSTEM =
+const SECOND_OPINION_SYSTEM =
   "You choose which on-screen element a step on the user's computer acts on, from a numbered list. " +
   'Reply with only that element\'s key, such as "e12", or "none" if no element on the list is it.';
 

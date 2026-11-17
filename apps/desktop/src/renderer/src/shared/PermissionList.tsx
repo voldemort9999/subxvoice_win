@@ -3,12 +3,9 @@ import { usePermissions } from "./hooks";
 
 const LABELS: Record<PermissionKind, { title: string; why: string }> = {
   microphone: { title: "Microphone", why: "To hear what you say." },
-  accessibility: { title: "Accessibility", why: "To type the text into the app you are using." },
-  input_monitoring: { title: "Input Monitoring", why: "To notice when you hold the hotkey." },
-  screen_recording: { title: "Screen Recording", why: "To understand what is on your screen." },
 };
 
-/** The permissions this OS needs, updating live as the user grants them. */
+/** The permissions the app needs, updating live as the user grants them. */
 export function PermissionList() {
   const statuses = usePermissions() ?? [];
 

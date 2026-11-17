@@ -3,7 +3,7 @@ import type { PillState } from "../shared/ipc";
 import type { MicSource } from "./mic";
 import type { PillWindow } from "./pill";
 
-export const SAMPLE_RATE = 16000;
+const SAMPLE_RATE = 16000;
 const MIN_HOLD_MS = 250; // a shorter press is an accidental tap
 const RESULT_VISIBLE_MS = 1500;
 /**
