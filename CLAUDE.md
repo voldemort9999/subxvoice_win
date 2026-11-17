@@ -3,6 +3,9 @@
 Voice-typing desktop app for **macOS and Windows**: hold a hotkey, speak (any language, switching
 mid-sentence is fine), and clean text is pasted at the cursor in whatever app has focus.
 
+**Pushes go to `origin` = `voldemort9999/subxvoice_win`, the main repo since 2026-11-17.**
+`app` = `voldemort9999/subxvoice-app` is the secondary copy; push there only when the user asks.
+
 **Read [`AGENTS.md`](AGENTS.md) for the repo map and the rules.** It is the authority on what goes
 where. This file is orientation plus the context system; it does not repeat AGENTS.md.
 
