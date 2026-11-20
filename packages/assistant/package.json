@@ -1,0 +1,23 @@
+{
+  "name": "@subx/assistant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-schema": "1.5.2",
+    "@subx/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "@types/node": "^24.19.0",
+    "vitest": "^5.1.1"
+  }
+}

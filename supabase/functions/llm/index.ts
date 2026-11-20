@@ -7,6 +7,16 @@ const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Jev is a "decisions model": it refuses the chat endpoint outright and answers typed questions
 // here instead. Same key, same session check — only the upstream path differs.
 const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+// The assistant talks to Claude in Anthropic's own Messages format (its SDK appends /v1/messages
+// to the proxy URL), so tool calls and screenshots stay native. Plan T14.
+const MESSAGES_URL = "https://openrouter.ai/api/v1/messages";
+
+/** Which OpenRouter path a proxy path maps to. */
+function upstreamFor(pathname: string): string {
+  if (pathname.endsWith("/messages")) return MESSAGES_URL;
+  if (pathname.endsWith("/decisions")) return DECISIONS_URL;
+  return CHAT_URL;
+}
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") {
@@ -17,17 +27,19 @@ Deno.serve(async (request) => {
   if (!apiKey) return new Response("Rewriting is not configured.", { status: 503 });
 
   const body = await request.text();
-  // The app posts to /llm for chat and /llm/decisions for a classification.
-  const upstream_url = new URL(request.url).pathname.endsWith("/decisions") ? DECISIONS_URL : CHAT_URL;
+  // The app posts to /llm for chat, /llm/decisions for a classification, /llm/v1/messages for the assistant.
+  const upstream_url = upstreamFor(new URL(request.url).pathname);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+  // Anthropic's version and beta headers decide the request's shape; they carry no secret.
+  for (const name of ["anthropic-version", "anthropic-beta"]) {
+    const value = request.headers.get(name);
+    if (value) headers[name] = value;
+  }
 
-  const upstream = await fetch(upstream_url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body,
-  });
+  const upstream = await fetch(upstream_url, { method: "POST", headers, body });
 
   // Passed through as-is: the app already knows how to read OpenRouter's successes and errors.
   return new Response(upstream.body, {
