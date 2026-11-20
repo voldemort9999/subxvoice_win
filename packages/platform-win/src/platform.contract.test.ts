@@ -6,12 +6,12 @@ vi.mock("electron", () => ({ shell: { openExternal: async (url: string) => void 
 
 const { createWinPlatform } = await import("./index");
 
-describe("createWinPlatform meets the shared Platform contract (Mac UI port, 2026-11-19)", () => {
-  it("is a Windows platform with the Mac app's desktop actions and the assistant's screen parts", async () => {
+describe("createWinPlatform meets the shared Platform contract (the Mac app's)", () => {
+  it("is a Windows platform with the dictation parts and the desktop actions", async () => {
     const platform: Platform = createWinPlatform();
     expect(platform.os).toBe("win");
-    expect(platform.screenControl).toBeDefined();
-    expect(platform.commands).toBeDefined();
+    expect(platform.field).toBeDefined();
+    expect(platform.feedback).toBeDefined();
     await platform.desktop.openUrl("https://example.com/");
     expect(opened).toEqual(["https://example.com/"]);
     expect(platform.desktop.openApp).toBeTypeOf("function");

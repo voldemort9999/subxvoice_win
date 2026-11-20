@@ -5,6 +5,7 @@ import { app, safeStorage } from "electron";
 import type { CodeSent, LastGoogleAccount } from "../shared/ipc";
 import { LinkedJustNow, signInInBrowser } from "./browser-sign-in";
 import { CodePacing } from "./code-pacing";
+import { clientHeaders } from "./providers";
 
 /**
  * Who the user is, and the token our server checks: Amazon Cognito, the pool `subxvoice-api`
@@ -23,13 +24,6 @@ const SIGN_IN_DOMAIN = "https://auth.subxvoice.app";
 
 /** Renew this long before the access token runs out, so a dictation never starts with a dying one. */
 const RENEW_BEFORE_MS = 2 * 60_000;
-
-/** Dictation time used today, and what is left of the daily allowance, in seconds. */
-export interface Usage {
-  used: number;
-  limit: number;
-  remaining: number;
-}
 
 export interface AccountState {
   /** The account's id (Cognito `sub`), used to keep each account's data apart on disk. */
@@ -78,6 +72,7 @@ export class Account {
   private lastGoogle: LastGoogleAccount | null | undefined;
   private session: Session | null = null;
   private renewing: Promise<void> | null = null;
+  private lostAtStart: string | null = null;
   /**
    * A sign-in waiting for the code just emailed. "new": an account was just created (or never
    * confirmed) and the code confirms it; "existing": the code signs in. `session` is Cognito's
@@ -113,8 +108,18 @@ export class Account {
       if (error instanceof CognitoError) {
         this.session = null;
         await this.forget();
+        this.lostAtStart = saved.id || null;
       }
     }
+  }
+
+  /**
+   * The account this Mac was signed in as until Cognito refused its session at start (the sign-in
+   * ran out). Its local data's 30 days start now, not from when the app was last open: signing in
+   * again must find the history still there (account-cleanup.ts).
+   */
+  signedOutAtStart(): string | null {
+    return this.lostAtStart;
   }
 
   /**
@@ -391,7 +396,7 @@ export class Account {
         method: "POST",
         headers: {
           Authorization: `Bearer ${await this.token()}`,
-          "x-subx-client": `win/${app.getVersion()}`,
+          ...clientHeaders(),
         },
         signal: AbortSignal.timeout(8000),
       });
@@ -426,36 +431,19 @@ export class Account {
     return this.session?.accessToken ?? "";
   }
 
-  /**
-   * Today's usage, straight from the server: a limit the client works out is a limit the client
-   * can be wrong about. Null when it cannot be read.
-   */
-  async usage(): Promise<Usage | null> {
-    if (this.devToken) return null;
-    const token = await this.token();
-    if (!token) return null;
-    try {
-      const response = await fetch(`${this.apiUrl}/v1/usage`, {
-        headers: { Authorization: `Bearer ${token}`, "x-subx-client": `win/${app.getVersion()}` },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!response.ok) return null;
-      return (await response.json()) as Usage;
-    } catch {
-      return null;
-    }
-  }
-
   onChanged(listener: (state: AccountState) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
   private async renew(refreshToken: string): Promise<void> {
-    const reply = await cognito<AuthReply>("InitiateAuth", {
+    // GetTokensFromRefreshToken, not InitiateAuth REFRESH_TOKEN_AUTH: it is the call that hands back
+    // a new refresh token once rotation is on for this client (each renewal then extends the sign-in
+    // by another 30 days, so only 30 days without opening the app sign the user out). With rotation
+    // off it renews exactly like the old call. adopt() saves the new token at once.
+    const reply = await cognito<AuthReply>("GetTokensFromRefreshToken", {
       ClientId: CLIENT_ID,
-      AuthFlow: "REFRESH_TOKEN_AUTH",
-      AuthParameters: { REFRESH_TOKEN: refreshToken },
+      RefreshToken: refreshToken,
     });
     const before = this.session?.id;
     await this.adopt(reply, refreshToken);

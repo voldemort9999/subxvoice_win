@@ -4,12 +4,10 @@ packages:
 
 # pnpm only runs install scripts for packages listed here.
 allowBuilds:
-  "@google/genai": false # pulled in by pi-ai (assistant); not needed to run
   electron: true
   electron-winstaller: false
   esbuild: true
   koffi: true # ships prebuilt binaries; its install script only picks the right one
-  protobufjs: false # pulled in by pi-ai; its postinstall only prints a version notice
   sharp: false
   unrs-resolver: false
 

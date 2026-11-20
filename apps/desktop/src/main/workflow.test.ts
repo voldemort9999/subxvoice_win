@@ -9,6 +9,7 @@ function build(opts: {
   spoken?: string;
   context?: { appName?: string; appId?: string };
   signedIn?: boolean;
+  account?: () => string;
 }) {
   const inserter = new FakeInserter();
   const history = new MemoryHistory();
@@ -35,6 +36,7 @@ function build(opts: {
     onHeard: (text) => heard.push(text),
     onHistoryChanged: () => {},
     signedIn: async () => opts.signedIn ?? true,
+    ...(opts.account ? { account: opts.account } : {}),
   };
 
   const pasted: string[] = [];
@@ -65,6 +67,36 @@ describe("createWorkflow", () => {
     expect(result).toEqual({ text: "Hi there.", nowhere: true });
     expect(pasted).toEqual([]);
     expect(history.records).toHaveLength(1);
+  });
+
+  it("types but keeps nothing when another account signed in during the dictation", async () => {
+    let account = "accounts/first";
+    const { workflow, inserter, history, saved, pasted } = build({
+      spoken: "Hi there.",
+      account: () => account,
+    });
+    const run = await workflow.open("exact");
+    run.push(clip.samples);
+    account = "accounts/second";
+    const result = await run.finish(clip);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result).toEqual({ text: "Hi there." });
+    expect(inserter.inserted).toEqual(["Hi there."]);
+    expect(history.records).toEqual([]);
+    expect(saved).toEqual([]);
+    expect(pasted).toEqual([]);
+  });
+
+  it("keeps the dictation when the account stayed the same", async () => {
+    const { workflow, history, saved } = build({ spoken: "Hi there.", account: () => "accounts/first" });
+    const run = await workflow.open("exact");
+    run.push(clip.samples);
+    await run.finish(clip);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(history.records).toHaveLength(1);
+    expect(saved).toHaveLength(1);
   });
 
   it("refuses to record when signed out", async () => {
@@ -108,57 +140,5 @@ describe("createWorkflow", () => {
     await Promise.resolve();
 
     expect(inserter.inserted).toEqual([]);
-  });
-});
-
-describe("the command key: Follow My Words (Mac UI port, 2026-11-19)", () => {
-  function command(heard: { text: string; raw?: string }) {
-    const built = build({});
-    const said: string[] = [];
-    const deps: WorkflowDeps = {
-      pipeline: new Pipeline({
-        stt: new FakeStt("unused"),
-        inserter: built.inserter,
-        history: built.history,
-        dictionary: new MemoryDictionary([]),
-      }),
-      context: { current: async () => ({ appName: "Notes" }) },
-      history: { save: async () => {}, attachAudio: async () => {} },
-      saveRecording: async () => "/tmp/rec.wav",
-      onHeard: () => {},
-      onHistoryChanged: () => {},
-      signedIn: async () => true,
-      listen: async () => ({
-        push: () => {},
-        finish: async () => ({ ...heard, languages: [] }),
-        cancel: () => {},
-      }),
-      follow: (text) => {
-        said.push(text);
-        return "Kar raha hoon…";
-      },
-    };
-    return { workflow: createWorkflow(deps), said, inserter: built.inserter, history: built.history };
-  }
-
-  it("hands the words as heard — not the server's rewrite — to the assistant, and types nothing", async () => {
-    const { workflow, said, inserter, history } = command({
-      text: "Please message Priya: Hi.",
-      raw: "WhatsApp par Priya ko hi bhejo",
-    });
-    const run = await workflow.open("command");
-    run.push(clip.samples);
-    const result = await run.finish(clip);
-    expect(said).toEqual(["WhatsApp par Priya ko hi bhejo"]);
-    expect(result.text).toBe("Kar raha hoon…");
-    expect(inserter.inserted).toEqual([]);
-    expect(history.records).toEqual([]);
-  });
-
-  it("says nothing was heard instead of starting an empty task", async () => {
-    const { workflow, said } = command({ text: "", raw: "" });
-    const run = await workflow.open("command");
-    expect((await run.finish(clip)).text).toBe("Nothing heard");
-    expect(said).toEqual([]);
   });
 });

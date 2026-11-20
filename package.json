@@ -9,7 +9,8 @@
     "dev:desktop": "pnpm --filter @subx/desktop dev",
     "build": "turbo run build",
     "check": "biome check . && turbo run typecheck test",
-    "fix": "biome check --write ."
+    "fix": "biome check --write .",
+    "tests:list": "node scripts/list-tests.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

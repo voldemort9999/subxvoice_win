@@ -62,14 +62,6 @@ export class DictationController {
   private readonly engine: DictationEngine;
   private readonly hooks: DictationHooks;
   private state: "idle" | "listening" | "processing" = "idle";
-
-  /**
-   * From the key going down until the words have landed: the assistant's touch watch does not take
-   * this for the user using the PC (packages/platform-win touch.ts).
-   */
-  dictating(): boolean {
-    return this.state !== "idle";
-  }
   /** The screen is locked; see setLocked. */
   private screenLocked = false;
   /** Hands-free: the key is no longer held, and the next press finishes. */

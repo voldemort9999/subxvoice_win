@@ -3,7 +3,6 @@ import { hotkeyLabel } from "../../../shared/hotkey-label";
 import type { PillState } from "../../../shared/ipc";
 import { alignment } from "../../../shared/pill-place";
 import { useAppInfo, useSettings } from "../shared/hooks";
-import { AssistantCard } from "./AssistantCard";
 import { BAR_COUNT, PillView } from "./PillView";
 import { MicRecorder } from "./recorder";
 
@@ -102,47 +101,37 @@ export function Pill() {
 
   return (
     <div className={`flex h-screen ${JUSTIFY[place.horizontal]} ${ALIGN[place.vertical]}`}>
-      {/* Follow My Words' capsule card sits on the screen side of the pill: above it, or below
-          it when the pill is at the top. */}
-      <div
-        className={`flex ${place.vertical === "start" ? "flex-col" : "flex-col-reverse"} items-center gap-2`}
+      <button
+        ref={button}
+        type="button"
+        onMouseEnter={() => hoverChanged(true)}
+        onMouseLeave={() => hoverChanged(false)}
+        // While a learned word is announced the whole pill is its Undo: a button inside a button is
+        // not allowed, and the pill is too small to aim at a smaller target.
+        onPointerDown={pointerDown}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+        title={`Hold ${hotkeyLabel(info?.hotkeys[0]?.keys)} to talk · press twice for hands-free · drag to move`}
+        aria-label={
+          state.kind === "learned"
+            ? "Undo: remove from dictionary"
+            : state.kind === "unplaced"
+              ? "Copy what you said"
+              : "Open SUBXVoice"
+        }
+        // Room around the idle bar, so the pointer finds it without pixel-hunting.
+        className="flex min-h-6 items-center justify-center px-2 py-1"
       >
-        <button
-          ref={button}
-          type="button"
-          onMouseEnter={() => hoverChanged(true)}
-          onMouseLeave={() => hoverChanged(false)}
-          // While a learned word is announced the whole pill is its Undo: a button inside a button is
-          // not allowed, and the pill is too small to aim at a smaller target.
-          onPointerDown={pointerDown}
-          onPointerUp={pointerUp}
-          onPointerCancel={pointerUp}
-          title={`Hold ${hotkeyLabel(info?.hotkeys[0]?.keys)} to talk · press twice for hands-free · drag to move`}
-          aria-label={
-            state.kind === "learned"
-              ? "Undo: remove from dictionary"
-              : state.kind === "unplaced"
-                ? "Copy what you said"
-                : "Open SUBXVoice"
-          }
-          // Room around the idle bar, so the pointer finds it without pixel-hunting.
-          className="flex min-h-6 items-center justify-center px-2 py-1"
-        >
-          <PillView
-            state={state}
-            levels={levels}
-            hover={hover}
-            hotkey={hotkeyLabel(info?.hotkeys[0]?.keys)}
-            elapsedMs={Math.max(0, now - startedAt)}
-            liveText={settings?.pillLiveText ?? true}
-            look={settings?.pillStyle ?? "classic"}
-          />
-        </button>
-        <AssistantCard
-          onHover={(inside) => window.subx.pill.hover(inside)}
-          listening={state.kind === "listening"}
+        <PillView
+          state={state}
+          levels={levels}
+          hover={hover}
+          hotkey={hotkeyLabel(info?.hotkeys[0]?.keys)}
+          elapsedMs={Math.max(0, now - startedAt)}
+          liveText={settings?.pillLiveText ?? true}
+          look={settings?.pillStyle ?? "classic"}
         />
-      </div>
+      </button>
     </div>
   );
 }

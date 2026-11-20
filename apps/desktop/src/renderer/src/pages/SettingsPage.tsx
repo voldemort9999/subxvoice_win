@@ -8,7 +8,14 @@ import { useFakeVoice } from "../pill/fakeVoice";
 import { PILL_STYLES, PillView } from "../pill/PillView";
 import { errorText } from "../shared/errors";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
-import { useAccount, useMicrophones, useSettings, useUpdate, useVoiceSettings } from "../shared/hooks";
+import {
+  useAccount,
+  useDevices,
+  useMicrophones,
+  useSettings,
+  useUpdate,
+  useVoiceSettings,
+} from "../shared/hooks";
 import { shownHotkey } from "../shared/hotkeys";
 import { FolderIcon } from "../shared/icons";
 import { LanguagePicker } from "../shared/LanguagePicker";
@@ -288,7 +295,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
             </Field>
             <Field
               label="Keep dictations"
-              hint="Older dictations are deleted on their own, with their recordings. Checked every hour."
+              hint="Older dictations are deleted on their own, with their recordings. Checked every hour. Another account's dictations on this PC are deleted once it hasn't been signed in here for 30 days."
             >
               <Select
                 label="Keep dictations"
@@ -338,6 +345,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
               </div>
               <Button onClick={() => window.subx.auth.signOut()}>Sign out</Button>
             </div>
+            <YourDevices />
             <DeleteAccount />
           </div>
         )}
@@ -812,6 +820,67 @@ function WritingStyles() {
 }
 
 /** Gone for good: the account, what the server keeps for it, and this Mac's history and recordings. */
+/**
+ * The computers this account uses SUBXVoice on (the server's devices table), this Mac first. Asked
+ * once when the page opens; a computer shows up after its first use of the day.
+ */
+function YourDevices() {
+  const devices = useDevices();
+  const sorted = [...(devices ?? [])].sort((a, b) => Number(b.current) - Number(a.current));
+  return (
+    <Field label="Your devices" hint="The computers this account uses SUBXVoice on.">
+      {devices === null ? (
+        <p className="text-ink-soft">Loading…</p>
+      ) : sorted.length === 0 ? (
+        <p className="text-ink-soft">Shown after your next dictation.</p>
+      ) : (
+        <ul className="divide-y divide-rule border-y border-rule">
+          {sorted.map((device) => (
+            <li key={device.id} className="flex items-center justify-between gap-4 py-2.5">
+              <div>
+                <p className="font-semibold">
+                  {deviceName(device.platform)}
+                  {device.chip ? <span className="font-normal text-ink-soft"> · {device.chip}</span> : null}
+                </p>
+                <p className="text-xs text-ink-soft">
+                  {[
+                    systemName(device.platform, device.os),
+                    device.appVersion ? `SUBXVoice ${device.appVersion}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
+              <span className="shrink-0 text-xs text-ink-soft">
+                {device.current ? "This PC" : `Last used ${lastUsed(device.lastSeen)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Field>
+  );
+}
+
+const deviceName = (platform: string | null) =>
+  platform === "win" ? "Windows PC" : platform === "mac" ? "Mac" : "Computer";
+
+function systemName(platform: string | null, os: string | null): string | null {
+  if (!os) return null;
+  return platform === "win" ? `Windows ${os}` : platform === "mac" ? `macOS ${os}` : os;
+}
+
+/** "today", "yesterday", "3 days ago", or the date for older ones. */
+function lastUsed(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return at.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 function DeleteAccount() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);

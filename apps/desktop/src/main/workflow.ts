@@ -7,15 +7,7 @@
 // The controller above it only knows about the hotkey, the pill and the microphone; the pipeline
 // below it only knows about plug-point interfaces. Everything app-specific — which settings apply,
 // what the pill says, where the audio file goes, what a failure reads like — lives here.
-import type {
-  AppContext,
-  AudioClip,
-  ContextReader,
-  Mode,
-  Pipeline,
-  SessionRecord,
-  Transcript,
-} from "@subx/core";
+import type { AppContext, AudioClip, ContextReader, Mode, Pipeline, SessionRecord } from "@subx/core";
 import type { DictationEngine, DictationRun } from "./dictation";
 
 export interface WorkflowDeps {
@@ -36,15 +28,16 @@ export interface WorkflowDeps {
   /** Whether an account is signed in. Dictation runs on its session, so without one it refuses. */
   signedIn?(): Promise<boolean>;
   /**
+   * Which account's data is in use now (its folder). Read at key-down and again before anything is
+   * saved: a dictation belongs to the account it started in.
+   */
+  account?(): string;
+  /**
    * Today's remaining dictation seconds, asked for only when opening fails — the happy path must
    * not pay for a round trip it does not need.
    */
   remainingSeconds?(): Promise<number | null>;
   log?(line: string): void;
-  /** Hearing alone, for the command key: the same server socket, nothing pasted or recorded. */
-  listen?(): Promise<{ push(samples: Int16Array): void; finish(): Promise<Transcript>; cancel(): void }>;
-  /** Follow My Words: the assistant takes the words; returns the pill's acknowledgement. */
-  follow?(said: string): string;
 }
 
 export function createWorkflow(deps: WorkflowDeps): DictationEngine {
@@ -56,14 +49,17 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
         throw new Error("Sign in to SUBXVoice to dictate.");
       }
 
-      if (mode === "command") return openCommand(deps);
-
       const context = await deps.context.current().catch(() => ({}) as AppContext);
       // The lock or login screen is in front: nothing is recorded there, even if the lock event
       // was missed (it is the second guard; DictationController.setLocked is the first).
       if (context.appId === "com.apple.loginwindow" || context.appName === "loginwindow") {
         throw new Error("Unlock your PC to dictate.");
       }
+
+      // If someone else signs in before this dictation is saved, it is typed (it was said) but kept
+      // nowhere: not in their history, recordings or learned words.
+      const startedIn = deps.account?.();
+      const sameAccount = () => deps.account?.() === startedIn;
 
       // Opening here, on key-press, is what keeps release→paste short: the socket is already
       // warm and the words are recognised while the user is still speaking.
@@ -72,6 +68,7 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
         session = await deps.pipeline.open(mode, context, {
           onTranscript: deps.onHeard,
           ...(deps.onPartial ? { onPartial: deps.onPartial } : {}),
+          keep: sameAccount,
         });
       } catch (error) {
         throw await explain(deps, error);
@@ -87,10 +84,15 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
             return { text: "Nothing heard" };
           }
           const { record } = outcome;
+          if (!sameAccount()) {
+            deps.log?.("dictation: another account signed in meanwhile; typed, not kept");
+            if (outcome.pasteError) throw new Error(outcome.pasteError);
+            return outcome.nowhere ? { text: record.finalText, nowhere: true } : { text: record.finalText };
+          }
           deps.onHistoryChanged();
           // The text is already at the cursor; the recording is written afterwards so disk I/O
           // never sits on the user's critical path.
-          void keepAudio(deps, clip, record.id);
+          void keepAudio(deps, clip, record.id, sameAccount);
           deps.log?.(summarise(record, outcome.pasteError));
           // The transcript is saved either way; a failed paste is surfaced so the pill shows why
           // nothing appeared, rather than silently doing nothing.
@@ -108,34 +110,6 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
 }
 
 /**
- * The command key: the words go to the assistant, whose run outlives this key press and answers
- * through the capsule. The server's rewrite is for pasting; a command is read as it was heard
- * (`raw`), so "WhatsApp par Priya ko hi bhejo" is never turned into a polished sentence first.
- */
-async function openCommand(deps: WorkflowDeps): Promise<DictationRun> {
-  const { listen, follow } = deps;
-  if (!listen || !follow) throw new Error("Follow My Words isn't available on this computer");
-  let hearing: Awaited<ReturnType<NonNullable<WorkflowDeps["listen"]>>>;
-  try {
-    hearing = await listen();
-  } catch (error) {
-    throw await explain(deps, error);
-  }
-  return {
-    push: (samples) => hearing.push(samples),
-    finish: async () => {
-      const heard = await hearing.finish();
-      const said = (heard.raw ?? heard.text).trim();
-      if (!said) return { text: "Nothing heard" };
-      deps.onHeard(said);
-      deps.log?.(`command: "${said}"`);
-      return { text: follow(said) };
-    },
-    cancel: () => hearing.cancel(),
-  };
-}
-
-/**
  * The backend refuses an exhausted account before the upgrade, which reaches the app as a plain
  * connection failure. Saying "sign in again" there would send the user nowhere.
  */
@@ -147,7 +121,14 @@ async function explain(deps: WorkflowDeps, error: unknown): Promise<unknown> {
   return error;
 }
 
-async function keepAudio(deps: WorkflowDeps, clip: AudioClip, id: string): Promise<void> {
+async function keepAudio(
+  deps: WorkflowDeps,
+  clip: AudioClip,
+  id: string,
+  sameAccount: () => boolean,
+): Promise<void> {
+  // Written after the paste, so the account can have changed since the text was saved.
+  if (!sameAccount()) return;
   try {
     await deps.history.attachAudio(id, await deps.saveRecording(clip), durationMs(clip));
     deps.onHistoryChanged();

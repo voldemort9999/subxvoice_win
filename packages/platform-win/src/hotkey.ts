@@ -197,7 +197,6 @@ export class WinHotkey implements Hotkey {
   private bindings: { groups: number[][]; own: Set<number>; mode: Mode }[] = [];
   private held: Mode | null = null;
   private cancelled = false;
-  private changedAt = 0;
   /** Other keys already down when the chord was pressed (see tick). */
   private already = new Set<number>();
   private escape = false;
@@ -256,19 +255,6 @@ export class WinHotkey implements Hotkey {
     this.escapeDown = on && this.down(VK_ESCAPE);
   }
 
-  /** A bound chord is held right now — so the assistant's touch watch does not count it as the user using the PC. */
-  chordHeld(): boolean {
-    return this.held !== null;
-  }
-
-  /**
-   * Date.now() of the chord's last press or release; 0 before any. Its first key goes down before
-   * the pair is recognised and its last key-up after it clears, so touch.ts uses this edge too.
-   */
-  chordChangedAt(): number {
-    return this.changedAt;
-  }
-
   /**
    * Records a new hotkey from the keys the user holds, read by this same poll: the chord at its
    * fullest, ended when every key is let go. Settings recorded through the page's key events before,
@@ -322,7 +308,6 @@ export class WinHotkey implements Hotkey {
       const match = this.bindings.find((b) => b.groups.every((g) => g.some(this.down)));
       if (!match) return;
       this.held = match.mode;
-      this.changedAt = Date.now();
       this.cancelled = false;
       // Keys already down are not "another key pressed while holding": a media key Windows kept
       // reporting as held (0xB3, dev PC 2026-11-18) cancelled every command the moment it began.
@@ -336,7 +321,6 @@ export class WinHotkey implements Hotkey {
     if (!stillDown) {
       const mode = this.held;
       this.held = null;
-      this.changedAt = Date.now();
       if (!this.cancelled) onEvent({ type: "released", mode });
       this.cancelled = false;
       return;

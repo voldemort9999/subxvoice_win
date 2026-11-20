@@ -5,10 +5,10 @@ export interface AudioClip {
 }
 
 /**
- * Which key was held. "command" is Windows' Follow My Words key: its words go to the assistant,
- * never to the paste (apps/desktop workflow.ts).
+ * Which key was held. Every key dictates today; the mode is recorded so a second key can mean
+ * something else later without changing the history format.
  */
-export type Mode = "exact" | "style" | "command";
+export type Mode = "exact" | "style";
 
 /** What the user is looking at while speaking. Every field is optional — OS support varies. */
 export interface AppContext {

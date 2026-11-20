@@ -132,6 +132,14 @@ describe("Pipeline", () => {
     expect(history.records).toEqual([]);
   });
 
+  it("types but does not record a dictation the caller no longer keeps", async () => {
+    const { pipeline, inserter, history } = setup("hello");
+    const outcome = await pipeline.process(audio, "exact", {}, { keep: () => false });
+    expect(outcome).toMatchObject({ kind: "inserted" });
+    expect(inserter.inserted).toEqual(["hello"]);
+    expect(history.records).toEqual([]);
+  });
+
   it("silence produces nothing", async () => {
     const { pipeline, inserter } = setup("   ");
     expect(await pipeline.process(audio, "exact", {})).toEqual({ kind: "empty" });

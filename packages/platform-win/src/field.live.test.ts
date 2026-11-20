@@ -1,9 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { afterEach, describe, expect, it } from "vitest";
-import { INTEROP } from "./interop";
-import { PowerShellWorker } from "./powershell";
-import { WinScreenProbe } from "./probe";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { WinSystem } from "./system";
+import { foregroundWindow } from "./win32";
 
 /**
  * Reading back the box a dictation went into, on this machine — opt-in with LIVE=1. Shows a small
@@ -32,37 +31,39 @@ $w.Add_ContentRendered({ $w.Activate(); [void]$b.Focus(); [Console]::Out.WriteLi
 
 describe.skipIf(!live)("reading the focused box on this machine", () => {
   let window: ChildProcess | null = null;
-  const worker = new PowerShellWorker(INTEROP);
-  const probe = new WinScreenProbe(worker);
+  const system = new WinSystem();
+  afterAll(() => system.dispose());
   afterEach(() => {
     window?.kill();
     window = null;
   });
 
-  async function show(box: "rich" | "plain") {
+  /** False when Windows kept the focus elsewhere (the user is busy in another app). */
+  async function show(box: "rich" | "plain"): Promise<boolean> {
     window = spawn("powershell.exe", ["-NoProfile", "-STA", "-Command", WINDOW(box)]);
     await new Promise<string>((resolve) =>
       createInterface({ input: window?.stdout as NodeJS.ReadableStream }).once("line", resolve),
     );
     // Until Windows has given the window the focus: reading before that reads whatever had it.
     for (let tries = 0; tries < 25; tries++) {
-      if ((await probe.focused())?.window === "SubxFieldTest") return;
+      if (foregroundWindow()?.title === "SubxFieldTest") return true;
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    return false;
   }
 
-  it("reads a box that has only a Text pattern (Chromium's editable divs)", async () => {
-    await show("rich");
-    const text = await probe.focusedText();
+  it("reads a box that has only a Text pattern (Chromium's editable divs)", async (ctx) => {
+    // Never read a box of the user's own: without the focus, the test does not run.
+    if (!(await show("rich"))) ctx.skip();
+    const text = await system.focusedText();
     console.log("rich:", JSON.stringify(text));
     expect(text).toContain("Aarnav ko message kar dena");
   }, 30_000);
 
-  it("still reads a box with a Value", async () => {
-    await show("plain");
-    const text = await probe.focusedText();
+  it("still reads a box with a Value", async (ctx) => {
+    if (!(await show("plain"))) ctx.skip();
+    const text = await system.focusedText();
     console.log("plain:", JSON.stringify(text));
     expect(text).toBe("kal parso office aaunga");
-    worker.dispose();
   }, 30_000);
 });

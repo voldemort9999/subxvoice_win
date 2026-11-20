@@ -26,6 +26,13 @@ export interface SubxOptions {
   token: TokenSource;
   /** `x-subx-client`, e.g. "mac/0.0.1", so the server can serve per-platform engines. */
   client?: string;
+  /** `x-subx-device` (which computer this is, for the server's devices table). */
+  device?: string;
+  /**
+   * The account's day and allowance, which the server sends after the text when asked (`usage` in
+   * the start). Given as the server sent it; the app checks its shape. Without it, nothing is asked.
+   */
+  onUsage?: (totals: unknown) => void;
   /**
    * The user's dictation settings as this device keeps them, sent with each dictation so the server
    * never reads its database on the way to the first word. Null: the server reads its stored copy.
@@ -89,6 +96,7 @@ class SubxStream implements SttStream {
   private result: FinalMessage | null = null;
   private settle: (() => void) | null = null;
   private readonly onPartial: ((text: string) => void) | undefined;
+  private readonly onUsage: ((totals: unknown) => void) | undefined;
 
   constructor(
     options: SubxOptions,
@@ -98,6 +106,7 @@ class SubxStream implements SttStream {
     settings: Record<string, unknown> | null,
   ) {
     this.onPartial = stt.onPartial;
+    this.onUsage = options.onUsage;
     // Node's and Electron's WebSocket (undici) takes headers; the DOM type does not describe it.
     const WithHeaders = WebSocket as unknown as new (
       url: string,
@@ -108,6 +117,7 @@ class SubxStream implements SttStream {
       headers: {
         Authorization: `Bearer ${token}`,
         ...(options.client ? { "x-subx-client": options.client } : {}),
+        ...(options.device ? { "x-subx-device": options.device } : {}),
       },
     });
     this.socket.binaryType = "arraybuffer";
@@ -126,6 +136,7 @@ class SubxStream implements SttStream {
             ? { terms: (stt.hints ?? stt.vocabulary.map((word) => ({ word, heard: [] }))).slice(0, 300) }
             : {}),
           ...(settings ? { settings } : {}),
+          ...(options.onUsage ? { usage: true } : {}),
         }),
       );
       for (const frame of this.backlog) this.socket.send(frame);
@@ -209,6 +220,13 @@ class SubxStream implements SttStream {
         rewriteError: message.rewriteError,
       };
       this.settle?.();
+    } else if (message.type === "usage") {
+      // After the text: never affects the dictation, and a listener that throws is ignored.
+      try {
+        this.onUsage?.(message);
+      } catch {
+        // The totals are only shown.
+      }
     } else if (message.type === "error") {
       const code = message.code === "unauthorized" ? "permission_denied" : "provider";
       this.fail(new SubxError(code, SERVER_PROBLEMS[message.code ?? ""] ?? SERVER_PROBLEM));

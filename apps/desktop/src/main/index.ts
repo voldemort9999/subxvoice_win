@@ -1,6 +1,6 @@
 import { existsSync, renameSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   type DictionaryEntry,
@@ -38,20 +38,20 @@ import {
   type VoiceSettings,
 } from "../shared/ipc";
 import { isPillPlace } from "../shared/pill-place";
-import { assistantFactory } from "./assistant";
+import { markSignedIn, removeUnusedAccounts } from "./account-cleanup";
+import { AccountTotals } from "./account-totals";
 import { Account } from "./auth";
 import { createBackend } from "./backend";
 import { appIcon } from "./brand";
+import { guardAgainstCrashDialogs } from "./crash-guard";
 import { CountedHistoryStore, DailyTotals } from "./daily-totals";
-import { loadAssistantKeys, logDemoToFile, viaBackend } from "./demo";
 import { DictationController } from "./dictation";
-import { createFollow, parseReply } from "./follow";
 import { hotkeyRefusal } from "./hotkey-choice";
 import { EditLearner } from "./learner";
 import { nativeMic, PillMic } from "./mic";
 import { PillWindow } from "./pill";
 import { createPlatform } from "./platform";
-import { apiUrl, createStt, devToken, loadDevEnv } from "./providers";
+import { apiUrl, clientHeaders, createStt, devToken, loadDevEnv } from "./providers";
 import { deleteRecording, recordingsDir, saveRecording, setRecordingsDir } from "./recordings";
 import { loadPage, PRELOAD_PATH } from "./renderer";
 import { addStarterWords } from "./starter-words";
@@ -61,9 +61,10 @@ import { checkForUpdate, installUpdate, startUpdater, updateState } from "./upda
 import { VoiceSettingsCopy } from "./voice";
 import { createWorkflow } from "./workflow";
 
+// First, so nothing that goes wrong from here on can show a stack trace on screen.
+guardAgainstCrashDialogs();
+
 const HOTKEY_RETRY_MS = 3000;
-/** Follow My Words: hold Ctrl + Alt and say what to do on the PC (Windows). */
-const COMMAND_KEYS = "ctrl+alt";
 /** A renderer killed for memory dies again if reloaded straight away. */
 const RENDERER_RELOAD_MS = 500;
 
@@ -137,10 +138,8 @@ function migrateUserData(): void {
   }
 }
 migrateUserData();
-logDemoToFile();
 
 loadDevEnv();
-loadAssistantKeys();
 const platform = createPlatform();
 
 /**
@@ -180,6 +179,8 @@ let account: Account;
 /** Reported by the renderer, which is the only side with MediaDevices. */
 let microphones: MicrophoneOption[] = [];
 let mainWindow: BrowserWindow | null = null;
+/** Set once the account's numbers exist: the window coming to the front may refresh them. */
+let onMainWindowFocus: () => void = () => {};
 /** Held at module scope so opening the app can revive it; built in start(). */
 let pillWindow: PillWindow | null = null;
 let tray: Tray | null = null; // kept in a variable so it isn't garbage-collected
@@ -248,6 +249,8 @@ function openMainWindow(to?: Navigation): void {
   mainWindow.on("ready-to-show", () => {
     if (mainWindow) showOnThisSpace(mainWindow);
   });
+  // Another device may have dictated or changed words: one request at most every 30 s.
+  mainWindow.on("focus", () => onMainWindowFocus());
   // Same failure the pill has: the window survives its renderer and draws nothing. Here it is a
   // blank white page rather than an invisible one, which looks broken rather than absent.
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -348,9 +351,12 @@ async function start(): Promise<void> {
   // Bound once the account's folder is known (below); until then a dictation sends no settings and
   // the server reads its own copy.
   let voiceForDictation: () => Promise<Record<string, unknown> | null> = async () => null;
+  // Bound below too, once the account's totals exist: what each dictation sends back after its text.
+  let totalsFromDictation: (totals: unknown) => void = () => {};
   const stt = createStt(
     () => account.token(),
     () => voiceForDictation(),
+    (totals) => totalsFromDictation(totals),
   );
   // Transcripts, dictionary and audio belong to the person signed in, not to the machine. They
   // live in a folder named after the account so the next person to sign in starts empty.
@@ -367,8 +373,14 @@ async function start(): Promise<void> {
   const dictionary = new JsonDictionaryStore(() => join(accountDir, "dictionary.json"));
 
   const switchAccountData = async (userId: string | null) => {
+    // The account being left was signed in here until now: its 30 days start today. (Not the
+    // signed-out folder: it is no account, and marking it would make one at every start.)
+    if (basename(accountDir) !== "signed-out") await markSignedIn(accountDir).catch(() => {});
     accountDir = join(dataDir, "accounts", userId ?? "signed-out");
     await mkdir(accountDir, { recursive: true });
+    accountTotals.forget();
+    mainWindow?.webContents.send(IPC.statsChanged);
+    void cleanUpAccounts();
     setRecordingsDir(join(accountDir, "recordings"));
     history.forget();
     dictionary.forget();
@@ -380,9 +392,31 @@ async function start(): Promise<void> {
     void voice.sync();
   };
 
-  const backend = createBackend(apiUrl(), () => account.token(), `win/${app.getVersion()}`);
-  const voice = new VoiceSettingsCopy(() => join(accountDir, "voice-settings.json"), backend, dictionary);
+  const backend = createBackend(
+    apiUrl(),
+    () => account.token(),
+    `win/${app.getVersion()}`,
+    clientHeaders()["x-subx-device"],
+  );
+  const voice = new VoiceSettingsCopy(
+    () => join(accountDir, "voice-settings.json"),
+    backend,
+    dictionary,
+    // Words arrived from another device: the dictionary page (if open) reads its list again.
+    () => mainWindow?.webContents.send(IPC.dictionaryChanged),
+  );
   voiceForDictation = () => voice.forDictation();
+  // The account's numbers, every device together (account-totals.ts): kept live from each
+  // dictation's own answer and asked for only when the window opens, at most every 30 s.
+  const accountTotals = new AccountTotals({
+    backend,
+    local: () => totals.days(),
+    path: () => join(accountDir, "account-totals.json"),
+    onChange: () => mainWindow?.webContents.send(IPC.statsChanged),
+    onSettingsVersion: (version) => void voice.versionSeen(version),
+  });
+  totalsFromDictation = (totals) => void accountTotals.live(totals);
+  onMainWindowFocus = () => void accountTotals.refresh();
   const learner = new EditLearner({
     field: platform.field,
     dictionary,
@@ -414,6 +448,29 @@ async function start(): Promise<void> {
         console.warn("starter words:", error instanceof Error ? error.message : error),
       );
   };
+
+  /**
+   * Notes that the signed-in account is still in use here, then deletes the folders of accounts not
+   * signed in on this Mac for 30 days (account-cleanup.ts). Run at start, on every switch and hourly.
+   */
+  const cleanUpAccounts = async () => {
+    try {
+      await markSignedIn(accountDir);
+      const removed = await removeUnusedAccounts({
+        accountsDir: join(dataDir, "accounts"),
+        current: () => accountDir,
+      });
+      if (removed.length > 0) console.log(`accounts: removed ${removed.length} not used here for 30 days`);
+    } catch (error) {
+      console.warn("accounts: cleanup skipped:", error instanceof Error ? error.message : error);
+    }
+  };
+  setInterval(() => void cleanUpAccounts(), 60 * 60 * 1000);
+
+  // Signed out at start because the sign-in ran out: that account was in use here until now, so
+  // its 30 days start today and signing in again finds its history.
+  const lost = account.signedOutAtStart();
+  if (lost) await markSignedIn(join(dataDir, "accounts", lost)).catch(() => {});
 
   await switchAccountData((await account.state()).id);
   giveStarterWords(await account.state());
@@ -453,12 +510,9 @@ async function start(): Promise<void> {
   const bindings = async (): Promise<HotkeyBinding[]> => {
     const { hotkey } = await settings.all();
     // settings.json is a file the user can edit, so a stored hotkey is re-checked every time.
-    const dictate: HotkeyBinding[] =
-      !hotkey || !platform.hotkey.accepts(hotkey)
-        ? platform.hotkey.defaultBindings()
-        : [{ keys: hotkey, mode: "exact" }];
-    // Follow My Words (Ctrl + Alt) where the platform can act on the screen: Windows.
-    return platform.screenControl ? [...dictate, { keys: COMMAND_KEYS, mode: "command" }] : dictate;
+    return !hotkey || !platform.hotkey.accepts(hotkey)
+      ? platform.hotkey.defaultBindings()
+      : [{ keys: hotkey, mode: "exact" }];
   };
 
   handle(IPC.authState, () => account.state());
@@ -481,7 +535,8 @@ async function start(): Promise<void> {
     if (id) await rm(join(dataDir, "accounts", id), { recursive: true, force: true });
   });
   handle(IPC.authSignOut, () => account.signOut());
-  handle(IPC.authUsage, () => account.usage());
+  handle(IPC.authUsage, () => accountTotals.usage());
+  handle(IPC.accountDevices, () => backend.devices());
   handle(IPC.authSetProfile, (_event, name: unknown) => account.setProfile(asText(name, "name")));
   account.onChanged((state) => {
     // Switching accounts switches the data with it, and signing out puts it out of reach.
@@ -526,7 +581,7 @@ async function start(): Promise<void> {
   );
 
   handle(IPC.historyList, () => history.recent(Number.MAX_SAFE_INTEGER));
-  handle(IPC.statsDays, () => totals.days());
+  handle(IPC.statsDays, () => accountTotals.days());
   handle(IPC.historyAudio, async (_event, id: unknown) => {
     const record = await history.find(assertString(id, "id"));
     if (!record?.audioPath) throw new Error("This recording has no audio");
@@ -608,36 +663,6 @@ async function start(): Promise<void> {
   const mic = platform.microphone ? nativeMic(platform.microphone) : pillMic;
   const pipeline = new Pipeline({ stt, inserter: platform.inserter, history, dictionary });
 
-  // Follow My Words' assistant (plan T15): the command key starts a run; speech during it goes to
-  // that run. Its words are heard on the same server socket as dictation (workflow.ts openCommand).
-  const makeAssistant = assistantFactory({
-    platform,
-    token: () => account.token(),
-    dictationActive: () => dictation.dictating(),
-    // Everything it types is in Roman letters, Hinglish for Hindi (user, 2026-11-19).
-    script: () => "roman",
-  });
-  const follow = makeAssistant
-    ? createFollow({
-        assistant: makeAssistant,
-        onEvent: (event) => {
-          // One line per event: a run that stalls says where in the log.
-          console.log(`assistant: ${JSON.stringify(event).slice(0, 300)}`);
-          pill.assistantEvent(event);
-        },
-      })
-    : null;
-  const listenForCommand = async () => {
-    if (!stt.startStream) throw new Error("Speech-to-text can't stream here");
-    const words = (await dictionary.all()).map((entry) => entry.word);
-    const stream = await stt.startStream({ vocabulary: words });
-    return {
-      push: (samples: Int16Array) => stream.push(samples),
-      finish: () => stream.finish(),
-      cancel: () => (stream.cancel ? stream.cancel() : void stream.finish().catch(() => {})),
-    };
-  };
-
   let muteTimer: NodeJS.Timeout | undefined;
   let live = false;
   const dictation = new DictationController(
@@ -651,11 +676,15 @@ async function start(): Promise<void> {
       onHeard: (text) => pill.setState({ kind: "processing", message: text }),
       onPartial: (text) => dictation.heard(text),
       signedIn: async () => (await account.state()).signedIn,
-      remainingSeconds: async () => (await account.usage())?.remaining ?? null,
+      account: () => accountDir,
+      // Only when a dictation could not start: asked fresh, since it decides what the pill says.
+      remainingSeconds: async () => {
+        await accountTotals.refresh(true);
+        return (await accountTotals.usage())?.remaining ?? null;
+      },
       onHistoryChanged: notifyHistoryChanged,
       onPasted: (text, app) => void learner.pasted(text, app),
       log: (line) => console.log(line),
-      ...(follow ? { listen: listenForCommand, follow: (said: string) => follow.said(said) } : {}),
     }),
     {
       // Read per dictation, so a change in Settings applies to the next one. The muting waits for
@@ -733,14 +762,13 @@ async function start(): Promise<void> {
   handle(IPC.updateState, () => updateState());
   handle(IPC.updateCheck, () => checkForUpdate());
   listen(IPC.updateInstall, () => installUpdate());
-  // The demo build never updates: the feed holds 0.4.3, which would replace it (plan D1).
   startUpdater((state) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(IPC.updateChanged, state);
     }
-  }, viaBackend());
+  }, app.isPackaged);
 
-  // The native microphone records from the device the user picked ("" follows the Mac's default).
+  // The native microphone records from the device the user picked ("" follows the system default).
   const { microphoneId, voiceCleanup } = await settings.all();
   platform.microphone?.use?.(microphoneId);
   platform.microphone?.cleanup?.(voiceCleanup);
@@ -765,11 +793,6 @@ async function start(): Promise<void> {
       : [];
   });
 
-  listen(IPC.assistantReply, (event, value: unknown) => {
-    if (!pill.owns(event.sender)) return;
-    const reply = parseReply(value);
-    if (reply) follow?.reply(reply);
-  });
   listen(IPC.pillHover, (event, inside: unknown) => {
     if (pill.owns(event.sender)) pill.setHover(inside === true);
   });
@@ -851,11 +874,7 @@ async function start(): Promise<void> {
       return;
     }
     await platform.hotkey
-      .register(await bindings(), (event) => {
-        // A run in progress holds its next step for what the user is about to say (S-024).
-        if (event.type === "pressed" && event.mode === "command") follow?.hold();
-        dictation.handleHotkey(event);
-      })
+      .register(await bindings(), (event) => dictation.handleHotkey(event))
       .catch((error: unknown) => {
         // Missing permission: keep trying, so the hotkey starts working as soon as it is granted.
         if (error instanceof SubxError && error.code === "permission_denied") {
@@ -885,7 +904,7 @@ async function start(): Promise<void> {
     try {
       const keys = await session.done;
       if (!keys) return null;
-      const refused = hotkeyRefusal(keys, (k) => platform.hotkey.accepts(k), COMMAND_KEYS);
+      const refused = hotkeyRefusal(keys, (k) => platform.hotkey.accepts(k));
       return refused ? { refused } : { keys };
     } finally {
       if (recording === session) recording = null;
@@ -905,7 +924,7 @@ async function start(): Promise<void> {
       // The same daily totals as Home, so the menu and the window never disagree (this line used to
       // count the history's words its own way, splitting on spaces: a "—" was a word, a Japanese
       // sentence was one, and deleted dictations dropped out).
-      const days: Record<string, DayTotal> = await totals.days().catch(() => ({}));
+      const days: Record<string, DayTotal> = await accountTotals.days().catch(() => ({}));
       const today = days[dayKey(Date.now())];
       return {
         signedIn: state.signedIn,

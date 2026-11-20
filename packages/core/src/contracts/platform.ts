@@ -1,6 +1,4 @@
-import type { CommandSource, ScreenDriver } from "../agent/types";
 import type { AppContext, AudioClip, Mode } from "../types";
-import type { ScreenControl } from "./screen-control";
 
 export type HotkeyEvent =
   | { type: "pressed"; mode: Mode }
@@ -162,10 +160,4 @@ export interface Platform {
   field?: FieldReader;
   /** Optional: without it the pill's window takes its own clicks. */
   clickCatcher?: ClickCatcher;
-  /** Follow My Words' direct actions (open an app, set the volume, WhatsApp…). Windows only. */
-  commands?: CommandSource;
-  /** The screen through the accessibility tree, for the assistant's `ui` tool. Windows only. */
-  screen?: ScreenDriver;
-  /** The assistant's screenshots, mouse and keyboard (screen-control.ts). Windows only. */
-  screenControl?: ScreenControl;
 }

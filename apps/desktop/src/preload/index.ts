@@ -19,6 +19,7 @@ const api: SubxApi = {
     signOut: () => ipcRenderer.invoke(IPC.authSignOut),
     setProfile: (name) => ipcRenderer.invoke(IPC.authSetProfile, name),
     usage: () => ipcRenderer.invoke(IPC.authUsage),
+    devices: () => ipcRenderer.invoke(IPC.accountDevices),
     onChanged: (listener) => subscribe(IPC.authChanged, listener),
   },
   voice: {
@@ -51,9 +52,11 @@ const api: SubxApi = {
   },
   stats: {
     days: () => ipcRenderer.invoke(IPC.statsDays),
+    onChanged: (listener) => subscribe(IPC.statsChanged, listener),
   },
   dictionary: {
     list: () => ipcRenderer.invoke(IPC.dictionaryList),
+    onChanged: (listener) => subscribe(IPC.dictionaryChanged, listener),
     upsert: (entry) => ipcRenderer.invoke(IPC.dictionaryUpsert, entry),
     remove: (word) => ipcRenderer.invoke(IPC.dictionaryRemove, word),
     learning: () => ipcRenderer.invoke(IPC.dictionaryLearning),
@@ -82,8 +85,6 @@ const api: SubxApi = {
     onState: (listener) => subscribe(IPC.pillState, listener),
     onLevel: (listener) => subscribe(IPC.pillLevel, listener),
     onMicCommand: (listener) => subscribe(IPC.micCommand, listener),
-    onAssistant: (listener) => subscribe(IPC.assistantEvent, listener),
-    reply: (reply) => ipcRenderer.send(IPC.assistantReply, reply),
     hover: (inside) => ipcRenderer.send(IPC.pillHover, inside),
     press: () => ipcRenderer.send(IPC.pillPress),
     release: () => ipcRenderer.send(IPC.pillRelease),

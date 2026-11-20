@@ -76,7 +76,7 @@ describe("WinHotkey", () => {
 
   it("a key already down before the chord (a stuck media key) does not cancel it", () => {
     // Seen on the dev PC 2026-11-18: Windows reported Play/Pause (0xB3) held with nothing pressed,
-    // and every Ctrl+Alt command was cancelled the moment it began.
+    // and every hotkey press was cancelled the moment it began.
     const PLAY_PAUSE = 0xb3;
     const { held, events, tick } = keyboard();
     held.add(PLAY_PAUSE);
@@ -197,36 +197,6 @@ describe("accepting a custom combination", () => {
   });
 });
 
-describe("WinHotkey.chordHeld", () => {
-  // The touch watch (touch.ts) must not take the app's own hotkey for the user using the PC.
-  it("says whether a bound chord is held right now", () => {
-    const { held, tick, hotkey } = keyboard();
-    expect(hotkey.chordHeld()).toBe(false);
-    held.add(VK.control).add(VK.lwin);
-    tick();
-    expect(hotkey.chordHeld()).toBe(true);
-    held.clear();
-    tick();
-    expect(hotkey.chordHeld()).toBe(false);
-  });
-});
-
-describe("WinHotkey.chordChangedAt", () => {
-  // touch.ts treats input this close to a press or release as the hotkey (review I8).
-  it("records when the chord was pressed and when it was let go", () => {
-    const { held, tick, hotkey } = keyboard();
-    expect(hotkey.chordChangedAt()).toBe(0);
-    held.add(VK.control).add(VK.lwin);
-    const before = Date.now();
-    tick();
-    const pressed = hotkey.chordChangedAt();
-    expect(pressed).toBeGreaterThanOrEqual(before);
-    held.clear();
-    tick();
-    expect(hotkey.chordChangedAt()).toBeGreaterThanOrEqual(pressed);
-  });
-});
-
 describe("WinHotkey.watchEscape (the Mac app's Esc to cancel, Mac UI port 2026-11-19)", () => {
   const ESC = 0x1b;
 
@@ -246,7 +216,7 @@ describe("WinHotkey.watchEscape (the Mac app's Esc to cancel, Mac UI port 2026-1
     ]);
   });
 
-  it("ignores Esc when not watching — an assistant run never turns it on", () => {
+  it("ignores Esc when no dictation is open", () => {
     const { held, events, tick, hotkey } = keyboard();
     hotkey.watchEscape(false);
     held.add(ESC);

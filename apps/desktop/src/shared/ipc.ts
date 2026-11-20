@@ -1,14 +1,12 @@
 // The contract between the UI (renderer) and the main process. Main, preload and renderer
 // all import from here, so channel names and types can't drift apart.
 import type {
-  AssistantEvent,
   DictionaryEntry,
   HotkeyBinding,
   MicDevice,
   PermissionKind,
   PermissionState,
   SessionRecord,
-  UserReply,
 } from "@subx/core";
 import type { PillPlace } from "./pill-place";
 
@@ -30,6 +28,11 @@ export const IPC = {
   permissionOpenSettings: "permissions:open-settings",
   historyList: "history:list",
   statsDays: "stats:days",
+  /** The account's totals or allowance changed (a dictation, or another device): read them again. */
+  statsChanged: "stats:changed",
+  /** Words arrived from another device: the dictionary page reads its list again. */
+  dictionaryChanged: "dictionary:changed",
+  accountDevices: "account:devices",
   historyAudio: "history:audio",
   historyRemove: "history:remove",
   historyClear: "history:clear",
@@ -65,10 +68,6 @@ export const IPC = {
   pillLevel: "pill:level",
   micCommand: "mic:command",
   // pill → main
-  /** Follow My Words' assistant, event by event, for the capsule card above the pill (plan T15). */
-  assistantEvent: "assistant:event",
-  /** The capsule's answer: a choice, an Allow / Don't, a typed reply. */
-  assistantReply: "assistant:reply",
   pillHover: "pill:hover",
   pillPress: "pill:press",
   pillRelease: "pill:release",
@@ -183,6 +182,19 @@ export interface Usage {
   remaining: number;
 }
 
+/** A computer the account uses SUBXVoice on (the server's devices table). */
+export interface AccountDevice {
+  id: string;
+  platform: string | null;
+  appVersion: string | null;
+  chip: string | null;
+  os: string | null;
+  firstSeen: string;
+  lastSeen: string;
+  /** This Mac. */
+  current: boolean;
+}
+
 /** Who is signed in. The app needs an account before it can dictate. */
 export interface AccountState {
   /** The account's id, used to keep each account's data apart on disk. */
@@ -284,6 +296,8 @@ export interface SubxApi {
     signOut(): Promise<void>;
     setProfile(name: string): Promise<void>;
     usage(): Promise<Usage | null>;
+    /** The computers this account uses SUBXVoice on; asked only when the account page opens. */
+    devices(): Promise<AccountDevice[]>;
     onChanged(listener: (state: AccountState) => void): () => void;
   };
   app: {
@@ -325,12 +339,19 @@ export interface SubxApi {
     clear(): Promise<void>;
     onChanged(listener: () => void): () => void;
   };
-  /** Words, speaking time and dictations per day; kept when history is deleted. */
+  /**
+   * Words, speaking time and dictations per day: the account's, every device together, where the
+   * server counted them; this Mac's own before that. Kept when history is deleted.
+   */
   stats: {
     days(): Promise<Record<string, DayTotal>>;
+    /** The totals or the allowance changed; read them again (no network: they are kept here). */
+    onChanged(listener: () => void): () => void;
   };
   dictionary: {
     list(): Promise<DictionaryEntry[]>;
+    /** Words were added, edited or deleted on another device. */
+    onChanged(listener: () => void): () => void;
     upsert(entry: DictionaryEntry): Promise<void>;
     remove(word: string): Promise<void>;
     /** Fixes seen once and waiting for a second, and the words that are not learned again. */
@@ -367,10 +388,6 @@ export interface SubxApi {
     /** Loudness 0–1 while listening, for the waveform. */
     onLevel(listener: (level: number) => void): () => void;
     onMicCommand(listener: (command: MicCommand) => void): () => void;
-    /** Follow My Words' run, for the capsule card above the pill. */
-    onAssistant(listener: (event: AssistantEvent) => void): () => void;
-    /** The capsule's answer to a question or an approval. */
-    reply(reply: UserReply): void;
     hover(inside: boolean): void;
     /**
      * Mouse down and up on the pill. The main process tells a click from a drag by where the mouse

@@ -1,4 +1,4 @@
-import type { AssistantEvent, ClickCatcher } from "@subx/core";
+import type { ClickCatcher } from "@subx/core";
 import { BrowserWindow, type Rectangle, screen, type WebContents } from "electron";
 import { IPC, type MicCommand, type PillState } from "../shared/ipc";
 import { alignment, nearestPlace, PILL_PLACES, type PillPlace } from "../shared/pill-place";
@@ -8,10 +8,7 @@ import { loadPage, PRELOAD_PATH } from "./renderer";
 /** Wide enough for the hands-free timer, the wave and the newest words side by side. */
 const WIDTH = 400;
 /** Room for the larger message pill (44 px) and its shadow. */
-// Windows: room above (or below) the pill for Follow My Words' capsule card. The window is
-// transparent and lets clicks through except over what it draws, and every placement below is
-// worked out from this height, so the pill itself stays exactly where it was.
-const HEIGHT = process.platform === "win32" ? 300 : 72;
+const HEIGHT = 72;
 const BOTTOM_GAP = 8;
 /** Below the menu bar, and clear of the notch's height on the Macs that have one. */
 const TOP_GAP = 4;
@@ -354,13 +351,6 @@ export class PillWindow {
   }
 
   /** `demo`: a made-up state from Settings, whose Undo must not touch the real dictionary. */
-  /** Follow My Words' run, for the capsule card above the pill. */
-  assistantEvent(event: AssistantEvent): void {
-    if (this.window.isDestroyed()) return;
-    this.window.webContents.send(IPC.assistantEvent, event);
-    this.reveal();
-  }
-
   setState(state: PillState, demo = false): void {
     this.kind = state.kind;
     this.learned = state.kind === "learned" && !demo ? state.words : [];

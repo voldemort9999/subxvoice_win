@@ -4,6 +4,7 @@
 import { join } from "node:path";
 import { SubxDictateStt } from "@subx/providers";
 import { app } from "electron";
+import { thisDevice } from "./device";
 
 /** The live server, in Mumbai. (Its old name, 3-109-44-84.sslip.io, still answers for older builds.) */
 const LIVE_API_URL = "https://api.subxvoice.app";
@@ -38,6 +39,23 @@ export function createStt(
   token: () => string | Promise<string>,
   /** The Mac's copy of the user's dictation settings, sent with each dictation. */
   settings: () => Promise<Record<string, unknown> | null>,
+  /** The account's totals the server sends after each dictation's text (account-totals.ts). */
+  onUsage?: (totals: unknown) => void,
 ): SubxDictateStt {
-  return new SubxDictateStt({ baseUrl: apiUrl(), token, client: `win/${app.getVersion()}`, settings });
+  return new SubxDictateStt({
+    baseUrl: apiUrl(),
+    token,
+    client: `win/${app.getVersion()}`,
+    device: clientHeaders()["x-subx-device"],
+    settings,
+    ...(onUsage ? { onUsage } : {}),
+  });
+}
+
+/** What every request to our server says about the app and the computer (`device.ts`). */
+export function clientHeaders(): { "x-subx-client": string; "x-subx-device": string } {
+  return {
+    "x-subx-client": `win/${app.getVersion()}`,
+    "x-subx-device": thisDevice(app.getPath("userData"), process.getSystemVersion()),
+  };
 }

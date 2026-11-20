@@ -21,7 +21,8 @@ export function PermissionsIntro() {
 export function HotkeyNote() {
   return (
     <p className="text-ink-soft">
-      Hold Ctrl + Win to dictate. Hold Ctrl + Alt to tell SUBXVoice what to do on your PC — Follow My Words.
+      Ctrl + Win is the default. Whatever key you set works in every app, so pick one that no app you use
+      needs.
     </p>
   );
 }

@@ -85,6 +85,36 @@ describe("SUBXVoice /v1/dictate plug", () => {
     expect(await done).toEqual({ text: "kal milte hain", raw: "कल मिलते हैं।", languages: [] });
   });
 
+  it("asks for the account's totals only when someone listens, and hands them over after the text", async () => {
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeSocket;
+    const seen: unknown[] = [];
+    const stt = new SubxDictateStt({
+      baseUrl: "http://127.0.0.1:8080/",
+      token: () => "dev:aryan",
+      client: "mac/0.0.6",
+      device: "id=3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b; chip=Apple M2; os=26.1",
+      onUsage: (totals) => {
+        seen.push(totals);
+        throw new Error("a broken listener must not break the dictation");
+      },
+    });
+    const stream = await stt.startStream({ vocabulary: [] });
+    const socket = FakeSocket.last as FakeSocket;
+    expect(socket.init.headers).toMatchObject({ "x-subx-device": expect.stringContaining("chip=Apple M2") });
+    socket.open();
+    expect(socket.controls()[0]).toMatchObject({ type: "start", usage: true });
+    const done = stream.finish();
+    socket.deliver({ type: "final", text: "hello", raw: "hello", timings: {} });
+    socket.deliver({ type: "usage", today: { words: 1 } });
+    expect(await done).toMatchObject({ text: "hello" });
+    expect(seen).toEqual([{ type: "usage", today: { words: 1 } }]);
+
+    // Without a listener nothing is asked: the server sends what it always did.
+    const plain = await start();
+    plain.socket.open();
+    expect(plain.socket.controls()[0]).not.toHaveProperty("usage");
+  });
+
   it("sends finalize once the socket opens if the key came up first", async () => {
     const { stream, socket } = await start();
     const done = stream.finish();

@@ -57,7 +57,12 @@ export function DictionaryPage() {
   useEffect(() => {
     load();
     window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
+    // Words added or deleted on another device of this account arrive while the page is open.
+    const offElsewhere = window.subx.dictionary.onChanged(load);
+    return () => {
+      window.removeEventListener("focus", load);
+      offElsewhere();
+    };
   }, [load]);
 
   async function add(event: FormEvent) {

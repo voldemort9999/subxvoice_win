@@ -1,6 +1,7 @@
 import type { SessionRecord } from "@subx/core";
 import { useCallback, useEffect, useState } from "react";
 import type {
+  AccountDevice,
   AccountState,
   AppInfo,
   AppSettings,
@@ -30,7 +31,13 @@ export function useDayTotals(): Record<string, DayTotal> | null {
   useEffect(() => {
     const load = () => void window.subx.stats.days().then(setDays);
     load();
-    return window.subx.history.onChanged(load);
+    // This Mac's own count changes with its history; the account's with every device's dictations.
+    const offHistory = window.subx.history.onChanged(load);
+    const offStats = window.subx.stats.onChanged(load);
+    return () => {
+      offHistory();
+      offStats();
+    };
   }, []);
   return days;
 }
@@ -119,15 +126,30 @@ export function useAccount(): AccountState | null {
   return state;
 }
 
-/** Dictation time left today. Re-read whenever a dictation finishes, which is what changes it. */
+/**
+ * Dictation time left today, for the whole account. The main process keeps it current from each
+ * dictation's own answer, and says when it changed; reading it never waits on the network.
+ */
 export function useUsage(): Usage | null {
   const [usage, setUsage] = useState<Usage | null>(null);
   useEffect(() => {
     const load = () => void window.subx.auth.usage().then(setUsage);
     load();
-    return window.subx.history.onChanged(load);
+    return window.subx.stats.onChanged(load);
   }, []);
   return usage;
+}
+
+/** The computers this account uses; asked once, when the account page opens. */
+export function useDevices(): AccountDevice[] | null {
+  const [devices, setDevices] = useState<AccountDevice[] | null>(null);
+  useEffect(() => {
+    void window.subx.auth
+      .devices()
+      .then(setDevices)
+      .catch(() => setDevices([]));
+  }, []);
+  return devices;
 }
 
 /**

@@ -24,6 +24,12 @@ export interface ProcessOptions {
   onTranscript?: (text: string) => void;
   /** The words recognised so far, while the user is still speaking. */
   onPartial?: (text: string) => void;
+  /**
+   * Asked just before the dictation is recorded; false keeps it out of history (it is still
+   * typed: the user said it). The desktop says false when another account signed in between the
+   * key going down and the text coming back, so one person's words never land in another's history.
+   */
+  keep?: () => boolean;
 }
 
 /**
@@ -146,7 +152,7 @@ export class Pipeline {
       ...(transcript.rewriteError ? { rewriteError: transcript.rewriteError } : {}),
       timings: { sttMs, rulesMs, insertMs, totalMs: sttMs + clock.total() },
     };
-    await this.deps.history.save(record);
+    if (options.keep?.() !== false) await this.deps.history.save(record);
     if (pasteError) return { kind: "inserted", record, pasteError };
     return nowhere ? { kind: "inserted", record, nowhere: true } : { kind: "inserted", record };
   }

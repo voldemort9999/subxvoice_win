@@ -1,66 +1,41 @@
+import { spawn } from "node:child_process";
 import type { Platform } from "@subx/core";
 import { shell } from "electron";
-import { WinCommandSource } from "./commands";
 import { WinContextReader } from "./context";
 import { WinAudioFeedback } from "./feedback";
 import { WinFieldReader } from "./field";
 import { WinHotkey } from "./hotkey";
 import { WinInserter } from "./inserter";
-import { isOwnInput, ownInputEndedAt } from "./own-input";
 import { WinPermissions } from "./permissions";
-import { WinUserInputWatch } from "./touch";
-import { foregroundHandle, playWave, pressedKeys } from "./win32";
+import { WinSystem } from "./system";
+import { foregroundHandle, playWave } from "./win32";
 
+/** The Windows plug, for the same contract the Mac app's platform-mac fills. */
 export function createWinPlatform(): Platform {
-  const inserter = new WinInserter();
-  const commands = new WinCommandSource({ inserter, openUrl: (url) => shell.openExternal(url) });
-  const hotkey = new WinHotkey();
+  // PowerShell starts the first time the mute or the box reader is needed, never at app start.
+  const system = new WinSystem();
   return {
     os: "win",
-    hotkey,
-    inserter,
+    hotkey: new WinHotkey(),
+    inserter: new WinInserter(),
     permissions: new WinPermissions(),
     context: new WinContextReader(),
-    field: new WinFieldReader({
-      read: () => commands.probe.focusedText(),
-      foreground: foregroundHandle,
-    }),
+    field: new WinFieldReader({ read: () => system.focusedText(), foreground: foregroundHandle }),
     feedback: new WinAudioFeedback({
       play: playWave,
-      isMuted: () => commands.outputMuted(),
-      setMuted: (on) => commands.setOutputMuted(on),
+      isMuted: () => system.outputMuted(),
+      setMuted: (on) => system.setOutputMuted(on),
     }),
-    // The Mac app's menu and Home open apps and links through this; on Windows it is the same
-    // open_app action the assistant uses.
     desktop: {
+      // `start` resolves an app name, a path or a link the way the Run box does.
       openApp: async (name) => {
-        const action = (await commands.actions()).find((a) => a.id === "open_app");
-        await action?.run({ name });
+        spawn("cmd.exe", ["/c", "start", "", name], {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        }).unref();
       },
       openUrl: (url) => shell.openExternal(url),
-    },
-    // Nothing starts here: PowerShell is spawned on the first command, so the cost is never paid
-    // by someone who only dictates.
-    commands,
-    screen: commands.screen,
-    screenControl: {
-      capture: commands.capture,
-      input: commands.input,
-      probe: commands.probe,
-      // The executor's own input, the app's hotkeys and a landing dictation are not the user
-      // using the PC (touch.ts, review I8).
-      watch: (dictationActive) =>
-        new WinUserInputWatch({
-          injectedAt: () => commands.input.lastInjectedAt(),
-          own: isOwnInput,
-          ownEndedAt: () => ownInputEndedAt(),
-          chordHeld: () => hotkey.chordHeld(),
-          chordChangedAt: () => hotkey.chordChangedAt(),
-          dictationActive,
-          // Only a press or a window switch counts, not the mouse moving (touch.ts upsets()).
-          pressed: pressedKeys,
-          foreground: foregroundHandle,
-        }),
     },
   };
 }
