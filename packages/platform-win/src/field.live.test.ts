@@ -12,7 +12,7 @@ import { foregroundWindow } from "./win32";
  */
 const live = process.env.LIVE === "1" && process.platform === "win32";
 
-const WINDOW = (box: "rich" | "plain") => String.raw`
+const WINDOW = (box: "rich" | "plain" | "button") => String.raw`
 Add-Type -AssemblyName PresentationFramework
 $w = New-Object System.Windows.Window
 $w.Title = 'SubxFieldTest'; $w.Width = 420; $w.Height = 160; $w.Topmost = $true
@@ -20,6 +20,9 @@ if ('${box}' -eq 'rich') {
   $b = New-Object System.Windows.Controls.RichTextBox
   $b.Document.Blocks.Clear()
   $b.Document.Blocks.Add((New-Object System.Windows.Documents.Paragraph (New-Object System.Windows.Documents.Run 'Aarnav ko message kar dena')))
+} elseif ('${box}' -eq 'button') {
+  $b = New-Object System.Windows.Controls.Button
+  $b.Content = 'Send'
 } else {
   $b = New-Object System.Windows.Controls.TextBox
   $b.Text = 'kal parso office aaunga'
@@ -39,7 +42,7 @@ describe.skipIf(!live)("reading the focused box on this machine", () => {
   });
 
   /** False when Windows kept the focus elsewhere (the user is busy in another app). */
-  async function show(box: "rich" | "plain"): Promise<boolean> {
+  async function show(box: "rich" | "plain" | "button"): Promise<boolean> {
     window = spawn("powershell.exe", ["-NoProfile", "-STA", "-Command", WINDOW(box)]);
     await new Promise<string>((resolve) =>
       createInterface({ input: window?.stdout as NodeJS.ReadableStream }).once("line", resolve),
@@ -65,5 +68,14 @@ describe.skipIf(!live)("reading the focused box on this machine", () => {
     const text = await system.focusedText();
     console.log("plain:", JSON.stringify(text));
     expect(text).toBe("kal parso office aaunga");
+  }, 30_000);
+
+  // User, 2026-11-21: the pill offers Copy only when the words had nowhere to go.
+  it("tells a text box from a button, for pasting or offering Copy", async (ctx) => {
+    if (!(await show("plain"))) ctx.skip();
+    expect(await system.focusTakesText()).toBe(true);
+    window?.kill();
+    if (!(await show("button"))) ctx.skip();
+    expect(await system.focusTakesText()).toBe(false);
   }, 30_000);
 });

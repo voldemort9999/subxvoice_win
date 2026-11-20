@@ -319,6 +319,24 @@ public static class CmdField {
     } catch (Exception) { return "null"; }
   }
 
+  // What the focused element is, for the paste (focus.ts decides): JSON, or "null" with nothing
+  // focused. Only what kind of thing it is; never its text.
+  public static string FocusInfo() {
+    if (uia == null) uia = (IUIAutomation)new CUIAutomation();
+    IUIAutomationElement e;
+    try { e = uia.GetFocusedElement(); } catch (COMException) { return "null"; }
+    if (e == null) return "null";
+    object type = e.GetCurrentPropertyValue(ControlType);
+    return "{\"controlType\":" + (type is int ? ((int)type).ToString() : "0") +
+      ",\"className\":" + Json(e.GetCurrentPropertyValue(ClassName) as string ?? "") +
+      ",\"framework\":" + Json(e.GetCurrentPropertyValue(FrameworkId) as string ?? "") +
+      ",\"value\":" + (Is(e, IsValuePatternAvailable) ? "true" : "false") +
+      ",\"readOnly\":" + (Is(e, ValueIsReadOnly) ? "true" : "false") +
+      ",\"password\":" + (Is(e, IsPassword) ? "true" : "false") + "}";
+  }
+
+  const int ControlType = 30003, ClassName = 30012, FrameworkId = 30024, ValueIsReadOnly = 30046;
+
   static bool Is(IUIAutomationElement e, int property) {
     object flag = e.GetCurrentPropertyValue(property);
     return flag is bool && (bool)flag;

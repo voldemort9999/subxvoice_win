@@ -11,8 +11,8 @@ const DOUBLE_TAP_MS = 400;
 const RESULT_VISIBLE_MS = 1500;
 /** Long enough to read "Added … to dictionary" and reach for Undo. */
 const NOTICE_VISIBLE_MS = 5000;
-/** "No text box · Copy": time to notice, move the mouse there and click. */
-const UNPLACED_VISIBLE_MS = 8000;
+/** "No text box · Copy": time to notice, move the mouse there and click (user, 2026-11-21: 15 s). */
+const UNPLACED_VISIBLE_MS = 15_000;
 /**
  * A run still processing after this is stuck, not slow: the pill once sat on "•••" until the app
  * was restarted, and every later key press was ignored because the state never left "processing".

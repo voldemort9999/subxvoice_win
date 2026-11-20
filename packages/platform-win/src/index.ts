@@ -17,7 +17,13 @@ export function createWinPlatform(): Platform {
   return {
     os: "win",
     hotkey: new WinHotkey(),
-    inserter: new WinInserter(),
+    // Pastes only where text can go; elsewhere the pill offers Copy (the Mac app's rule).
+    inserter: new WinInserter({
+      focusTakesText: () => system.focusTakesText(),
+      warm: () => system.warm(),
+      // Read back after pasting: where the box can be read, the words must be in it.
+      readField: () => system.focusedText(),
+    }),
     permissions: new WinPermissions(),
     context: new WinContextReader(),
     field: new WinFieldReader({ read: () => system.focusedText(), foreground: foregroundHandle }),

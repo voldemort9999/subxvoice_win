@@ -1,3 +1,4 @@
+import { type FocusInfo, takesText } from "./focus";
 import { INTEROP } from "./interop";
 import { PowerShellWorker } from "./powershell";
 
@@ -20,6 +21,25 @@ export class WinSystem {
   /** The focused box's text; null when nothing readable has the focus, and always for a password box. */
   async focusedText(): Promise<string | null> {
     return (await this.worker.json<string | null>("[CmdField]::FocusedText()")) ?? null;
+  }
+
+  /** What kind of element has the focus (never its text); null when nothing has. */
+  async focusInfo(): Promise<FocusInfo | null> {
+    const info = await this.worker.json<FocusInfo | null>("[CmdField]::FocusInfo()");
+    return info && typeof info === "object" && !Array.isArray(info) ? info : null;
+  }
+
+  /** Whether the focus takes typed text: false only when it clearly does not, null when unsure. */
+  async focusTakesText(): Promise<boolean | null> {
+    return takesText(await this.focusInfo());
+  }
+
+  /**
+   * At key-down: starts the worker (compiling the C#) and asks about the focus once, because
+   * Chromium builds its accessibility tree only when asked; by key-up the answer is the real one.
+   */
+  warm(): void {
+    void this.focusInfo().catch(() => {});
   }
 
   dispose(): void {
