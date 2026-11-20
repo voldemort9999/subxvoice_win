@@ -3,13 +3,18 @@ import { basename, dirname } from "node:path";
 import {
   type ActionSource,
   type AgentAction,
+  closest,
   resolveOne,
   type ScreenElement,
   type TextInserter,
 } from "@subx/core";
+import { WinScreenCapture } from "./capture";
 import { KEYS } from "./hotkey";
+import { WinScreenInput } from "./input";
 import { INTEROP } from "./interop";
+import { asOwnInput } from "./own-input";
 import { PowerShellWorker, psQuote } from "./powershell";
+import { WinScreenProbe } from "./probe";
 import { BROWSERS, WinScreenDriver, words } from "./screen";
 import { sendChord, VK, waitForModifiersUp } from "./win32";
 
@@ -112,13 +117,23 @@ export class WinCommandSource implements ActionSource {
 
   /** Screen control, on this same worker — see screen.ts. */
   readonly screen: WinScreenDriver;
+  /** The assistant's eyes and hands (capture.ts, input.ts, probe.ts), on this same worker too. */
+  readonly capture = new WinScreenCapture(this.worker, { windows: () => this.windows() });
+  readonly input = new WinScreenInput(this.capture);
+  readonly probe = new WinScreenProbe(this.worker);
 
   constructor(deps: CommandDeps) {
     this.deps = deps;
+    // The classic screen step's own picture and hands, apart from the assistant's: a click on text
+    // read off the pixels lands in the frame of the picture that text came from.
+    const shots = new WinScreenCapture(this.worker, { windows: () => this.windows() });
+    const hands = new WinScreenInput(shots);
     this.screen = new WinScreenDriver(this.worker, {
       windows: () => this.windows(),
       inserter: deps.inserter,
       launchNamed: (hint) => this.launchNamed(hint),
+      capture: shots,
+      clickAt: (x, y) => hands.click(...shots.toShot(x, y)),
     });
   }
 
@@ -146,9 +161,10 @@ export class WinCommandSource implements ActionSource {
   }
 
   async actions(): Promise<AgentAction[]> {
-    return [
+    const all = [
       this.openApp(),
       this.openWeb(),
+      this.writeEmail(),
       this.whatsappMessage(),
       this.setVolume(),
       this.appVolume(),
@@ -170,6 +186,9 @@ export class WinCommandSource implements ActionSource {
       this.systemStatus(),
       ...NOT_YET,
     ];
+    // Whatever an action types, pastes or clicks is the app's own input, not the user touching
+    // the PC (own-input.ts).
+    return all.map((action) => ({ ...action, run: (args) => asOwnInput(() => action.run(args)) }));
   }
 
   /* ───────────── apps ───────────── */
@@ -316,13 +335,23 @@ export class WinCommandSource implements ActionSource {
       run: async (args) => {
         const to = text(args.to, "Who should the message go to?");
         const message = text(args.text, "What should the message say?");
-        const spellings = [to, ...(Array.isArray(args.alternatives) ? args.alternatives.map(String) : [])]
+        const given = [to, ...(Array.isArray(args.alternatives) ? args.alternatives.map(String) : [])];
+        // Hindi names are spelled with doubled letters or without — "Aaryan" was searched for a chat
+        // saved as "Aryan" and none was found (laptop demo, 2026-11-19) — so each gets its plain form.
+        // The bare name first ("Bolo aur Dragon" → "Dragon"): a chat is never named with those words.
+        const bare = given.map(bareName);
+        const spellings = [...bare, ...given, ...bare.map(plainSpelling)]
           .filter((name, index, all) => name.trim() && all.indexOf(name) === index)
-          .slice(0, 4);
+          .slice(0, 5);
 
-        const app = await this.findApp("WhatsApp").catch(() => null);
-        if (!app) throw new Error("WhatsApp isn't installed on this computer");
-        if (!(await this.launch(app))) throw new Error("WhatsApp didn't open");
+        // An open WhatsApp is brought forward directly. Asking Explorer to launch it again only
+        // raised it some of the time: "WhatsApp didn't open" after a 15 s wait, with it open (S-024).
+        const open = appWindow("WhatsApp", await this.userWindows());
+        if (!(open && (await this.worker.run(`[CmdWindows]::Focus(${open.handle})`).catch(() => false)))) {
+          const app = await this.findApp("WhatsApp").catch(() => null);
+          if (!app) throw new Error("WhatsApp isn't installed on this computer");
+          if (!(await this.launch(app))) throw new Error("WhatsApp didn't open");
+        }
 
         // Each wait ends as soon as what it waits for is there, so an open WhatsApp costs nothing.
         // Just started after a reboot, WhatsApp showed its window seconds before its chat list:
@@ -345,7 +374,19 @@ export class WinCommandSource implements ActionSource {
         }
         if (!chat) {
           const tried = spellings.map((name) => `"${name}"`).join(", ");
-          throw new Error(`No WhatsApp chat called ${tried}`);
+          // The nearest real chat, found by the name's first two letters, so a misheard "Aryn" comes
+          // back as a fact ("closest: Aryan") rather than a bare miss (plan T16).
+          const search = await this.whatsappWait(0, (element) => element.editable && element.where === "top");
+          let near: string | null = null;
+          if (search) {
+            // From the plain spelling: "Aa" of "Aaryan" matches nothing in "Aryan", "Ar" does.
+            await this.screen.typeInto(search.id, plainSpelling(bareName(to)).slice(0, 2));
+            near = nearestChat(
+              bareName(to),
+              (await this.whatsappResults()).map((row) => row.name),
+            );
+          }
+          throw new Error(`No WhatsApp chat called ${tried}; ${near ? `closest: ${near}` : "none close"}`);
         }
         await this.screen.click(chat.id);
 
@@ -401,15 +442,51 @@ export class WinCommandSource implements ActionSource {
 
   /* ───────────── browser ───────────── */
 
+  /**
+   * An email, written in one step: Gmail's new-mail page takes the address, subject and body in its
+   * URL. Left to the model as an open_web URL, it was written in full on one PC and opened empty on
+   * another, which then asked "kisko mail karun?" again and again (laptop demo, 2026-11-19) — so the
+   * URL is built here, and the address is never something to stop for.
+   */
+  private writeEmail(): AgentAction {
+    return {
+      id: "write_email",
+      describe:
+        "Write an email for the user in Gmail — to a manager, a friend, anyone: opens a new email with the " +
+        "subject and the whole message already written, not sent. Do not ask for the address first",
+      args:
+        '{"to"?: string, "subject": string, "body": string} — "to" only when the user said the address or it is ' +
+        "known; otherwise leave it out and say at the end that the address is still to fill. A spoken address is " +
+        'written as an address: "batch manager at the rate gmail dot com" → batchmanager@gmail.com. "body" is the ' +
+        "full email written for them — greeting, the message, sign-off — in the language they spoke, in Roman " +
+        "letters; line breaks as \\n.",
+      run: async (args) => {
+        const subject = text(args.subject, "What is the email about?");
+        const body = text(args.body, "What should the email say?");
+        const to = typeof args.to === "string" ? args.to.trim() : "";
+        const url = new URL("https://mail.google.com/mail/");
+        url.searchParams.set("view", "cm");
+        url.searchParams.set("fs", "1");
+        if (to) url.searchParams.set("to", to);
+        url.searchParams.set("su", subject);
+        url.searchParams.set("body", body);
+        await this.deps.openUrl(url.toString());
+        return {
+          did: `Opened a new Gmail email "${subject}"${to ? ` to ${to}` : " — no address yet"}, written, not sent`,
+        };
+      },
+    };
+  }
+
   private openWeb(): AgentAction {
     return {
       id: "open_web",
-      describe:
-        "Open a website in the browser, or search YouTube, Google or Gmail by address when the user asked to",
+      describe: "Open a website in the browser, or search YouTube, Google or Gmail by address",
       args:
         '{"url": string, "here"?: boolean} — "here" is true only when the user said to open it in the tab that is ' +
         'already open ("yahan", "isi tab mein", "in this tab"). "url" is a full https URL. YouTube search is https://www.youtube.com/results?search_query=..., ' +
         "Google search is https://www.google.com/search?q=..., Gmail is https://mail.google.com. URL-encode queries. " +
+        "To write an email, use write_email instead. " +
         "A query is in Roman letters as the user would type it: केसरिया → kesariya, never Devanagari.",
       run: async (args) => {
         const url = new URL(text(args.url, "Which website?"));
@@ -664,7 +741,8 @@ export class WinCommandSource implements ActionSource {
     const windows = await this.userWindows();
     const picked = new Map<number, WindowInfo>();
     for (const title of titles) {
-      for (const window of matchWindows(title, windows, many)) picked.set(window.handle, window);
+      for (const window of matchWindows(title, windows, many, new Set(picked.keys())))
+        picked.set(window.handle, window);
     }
     if (!picked.size) throw new Error(`Couldn't find ${titles.join(", ")} among the open windows`);
     return [...picked.values()];
@@ -918,15 +996,19 @@ export class WinCommandSource implements ActionSource {
       facts: async () => [`${name} is currently ${(await this.radioState(winrt)).toLowerCase()}`],
       run: async (args) => {
         const turn = String(args.turn ?? "").toLowerCase();
+        // The next step is decided by a model online, and the radio being on is not the network
+        // being back: a step decided at once timed out (S-024). Wait for it, briefly.
+        const back = async () =>
+          kind === "wifi" && !(await online()) ? " — the internet isn't back yet" : "";
         if (turn === "restart" && kind === "wifi") {
           await this.setRadio(winrt, name, "Off");
           await this.setRadio(winrt, name, "On");
-          return { did: `Restarted ${name}` };
+          return { did: `Restarted ${name}${await back()}` };
         }
         if (turn !== "on" && turn !== "off") throw new Error(`On or off?`);
         const target = turn === "on" ? "On" : "Off";
         await this.setRadio(winrt, name, target);
-        return { did: `${name} turned ${turn}` };
+        return { did: `${name} turned ${turn}${turn === "on" ? await back() : ""}` };
       },
     };
   }
@@ -1054,6 +1136,15 @@ export class WinCommandSource implements ActionSource {
 
   private async windows(): Promise<WindowInfo[]> {
     return this.worker.json<WindowInfo[]>("[CmdWindows]::List()");
+  }
+
+  /** For "mute other audio while dictating" (feedback.ts). */
+  async outputMuted(): Promise<boolean> {
+    return (await this.volume()).muted;
+  }
+
+  async setOutputMuted(on: boolean): Promise<void> {
+    await this.worker.run(`[CmcpAudio]::SetMute(0, $${on})`);
   }
 
   private async volume(): Promise<{ percent: number; muted: boolean }> {
@@ -1320,12 +1411,46 @@ const VK_SNAPSHOT = 0x2c;
 
 const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
+/** A name with its doubled letters single: Aaryan → Aryan, Priyaa → Priya, Deepak → Depak. */
+export function plainSpelling(name: string): string {
+  return name.replace(/(\p{L})\1+/giu, "$1");
+}
+
 /**
- * Two windows with exactly the title named — two "Untitled - Notepad" — mean the topmost, the one
- * just used: the list is in z-order. Acting on both closed a Notepad nobody named, in a test.
- * Only `many` (minimize, restore — nothing lost) widens a looser name to every window of one
- * program, so "minimize Chrome" means all of Chrome; closing never guesses that.
+ * Words speech carries along with a name ("bolo aur Dragon ko", "WhatsApp pe Aryan") that are
+ * never part of one. ponytail: a word list; add a word when a log shows it came along.
  */
+const SPOKEN_AROUND_NAMES = new Set(
+  "bolo bol aur ko ka ki ke se ne pe par mein me ek and to tell say whatsapp message msg karo kar likho bhejo".split(
+    " ",
+  ),
+);
+
+/**
+ * The name without the words speech put around it: "Bolo aur Dragon" was searched as it was, found
+ * nothing, and the model typed the message into WhatsApp's search box by hand (demo hand test,
+ * 2026-11-19). Only those words go — "Dragon Bhai" stays whole — and a name of nothing else stays.
+ */
+export function bareName(name: string): string {
+  const words = name.trim().split(/\s+/);
+  const kept = words.filter((word) => !SPOKEN_AROUND_NAMES.has(word.toLowerCase()));
+  return kept.length > 0 ? kept.join(" ") : name.trim();
+}
+
+/** The chat name in WhatsApp's rows nearest to `name`, as many leading words as it has; null when none is close. */
+export function nearestChat(name: string, rows: string[]): string | null {
+  const words = name.trim().split(/\s+/).length;
+  const names = rows.map((row) =>
+    row
+      .replace(/^\d+ unread messages?\s+/i, "")
+      .replace(/^[@~]/, "")
+      .split(/\s+/)
+      .slice(0, words)
+      .join(" "),
+  );
+  return closest(name, names);
+}
+
 /** "2 unread messages Aryan Monday", "@MCUPortal (You)" start with Aryan and MCUPortal; "Aryanshi" does not. */
 function startsWithName(row: string, name: string): boolean {
   const clean = row
@@ -1336,18 +1461,47 @@ function startsWithName(row: string, name: string): boolean {
   return clean.startsWith(wanted) && !/[\p{L}\p{N}]/u.test(clean.charAt(wanted.length));
 }
 
-function matchWindows(name: string, windows: WindowInfo[], many: boolean): WindowInfo[] {
+/**
+ * Two windows with exactly the title named — two "Untitled - Notepad" — mean the topmost, the one
+ * just used: the list is in z-order. Acting on both closed a Notepad nobody named, in a test.
+ * Only `many` (minimize, restore — nothing lost) widens a looser name to every window of one
+ * program, so "minimize Chrome" means all of Chrome; closing never guesses that.
+ *
+ * `taken`: windows already picked for earlier names. The same title named three times — "saare
+ * Notepad band karo" gave ["Untitled - Notepad" ×3] — means three windows, the topmost first; it
+ * used to land on the topmost every time and close one of three (S-024).
+ */
+export function matchWindows(
+  name: string,
+  windows: WindowInfo[],
+  many: boolean,
+  taken: ReadonlySet<number> = new Set(),
+): WindowInfo[] {
   const byTitle = resolveOne(name, windows, (window) => window.title);
   if (byTitle.chosen) return [byTitle.chosen];
   const wanted = name.trim().toLowerCase();
   const exact = byTitle.candidates.filter((window) => window.title.toLowerCase() === wanted);
-  if (exact.length) return [exact[0] as WindowInfo];
+  if (exact.length) return [exact.find((window) => !taken.has(window.handle)) ?? (exact[0] as WindowInfo)];
   if (!many) return [];
   const programs = [...new Set(byTitle.candidates.map((window) => window.program.toLowerCase()))];
   if (programs.length === 1) return byTitle.candidates;
   const all = [...new Set(windows.map((window) => window.program))];
   const byProgram = resolveOne(name.replace(/^google /i, ""), all, (program) => program);
   return byProgram.chosen ? windows.filter((window) => window.program === byProgram.chosen) : [];
+}
+
+/** An open window of the app: every word of its name in the window's title or program, topmost first. */
+export function appWindow(appName: string, windows: WindowInfo[]): WindowInfo | undefined {
+  const words = (text: string) =>
+    text
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+  const wanted = words(appName);
+  return windows.find((window) => {
+    const have = new Set(words(`${window.title} ${window.program}`));
+    return wanted.every((word) => have.has(word));
+  });
 }
 
 /** One window by its title, several by count — a pill line, and what memory gives the next command. */
@@ -1369,3 +1523,21 @@ function number(value: unknown, missing: string): number {
 const clamp = (level: number) => Math.round(Math.max(0, Math.min(100, level)));
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Whether the internet answers, waiting up to `ms`. The address is Windows' own connectivity check
+ * (NCSI), which the PC already calls on every network change.
+ */
+async function online(ms = 20_000): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const ok = await fetch("https://www.msftconnecttest.com/connecttest.txt", {
+      signal: AbortSignal.timeout(2000),
+    })
+      .then((response) => response.ok)
+      .catch(() => false);
+    if (ok) return true;
+    await sleep(1000);
+  }
+  return false;
+}

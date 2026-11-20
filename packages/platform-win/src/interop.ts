@@ -576,6 +576,10 @@ public static class CmdScreen {
 const UIA = String.raw`
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -612,20 +616,28 @@ public interface IUIAutomationElement {
   [return: MarshalAs(UnmanagedType.IUnknown)] object GetCurrentPattern(int patternId);
 }
 
+// UIA's POINT, passed by value to ElementFromPoint.
+[StructLayout(LayoutKind.Sequential)] public struct UiaPoint { public int X, Y; }
+
+[ComImport, Guid("4042c624-389c-4afc-a630-9df854a541fc"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationTreeWalker {
+  IUIAutomationElement GetParentElement(IUIAutomationElement element);
+}
+
 [ComImport, Guid("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IUIAutomation {
   void CompareElements();
   void CompareRuntimeIds();
   void GetRootElement();
   IUIAutomationElement ElementFromHandle(IntPtr hwnd);
-  void ElementFromPoint();
-  void GetFocusedElement();
+  IUIAutomationElement ElementFromPoint(UiaPoint point);
+  IUIAutomationElement GetFocusedElement();
   void GetRootElementBuildCache();
   void ElementFromHandleBuildCache();
   void ElementFromPointBuildCache();
   void GetFocusedElementBuildCache();
   void CreateTreeWalker();
-  void get_ControlViewWalker();
+  IUIAutomationTreeWalker get_ControlViewWalker();
   void get_ContentViewWalker();
   void get_RawViewWalker();
   void get_RawViewCondition();
@@ -644,6 +656,28 @@ public interface IUIAutomation {
 [ComImport, Guid("fb377fbe-8ea6-46d5-9c73-6499642d3059"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IUIAutomationInvokePattern { void Invoke(); }
 
+// The other patterns the assistant's ui tool acts through; each needs only its first slot.
+[ComImport, Guid("a8efa66a-0fda-421a-9194-38021f3578ea"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationSelectionItemPattern { void Select(); }
+[ComImport, Guid("619be086-1f4e-4ee4-bafa-210128738730"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationExpandCollapsePattern { void Expand(); }
+[ComImport, Guid("b488300f-d015-4f19-9c29-bb595e3645ef"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationScrollItemPattern { void ScrollIntoView(); }
+
+// The text of a box that has no Value: Chromium's editable divs (WhatsApp, Gmail, chat inputs in
+// web views) give a Text pattern only. Slots before the one used are placeholders, in vtable order.
+[ComImport, Guid("32eba289-3583-42c9-9c59-3b6d9a1e9b6a"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationTextPattern {
+  void RangeFromPoint(); void RangeFromChild(); void GetSelection(); void GetVisibleRanges();
+  IUIAutomationTextRange DocumentRange { get; }
+}
+[ComImport, Guid("a543cc6a-f4ae-494b-8239-c814481187a8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationTextRange {
+  void Clone(); void Compare(); void CompareEndpoints(); void ExpandToEnclosingUnit(); void FindAttribute();
+  void FindText(); void GetAttributeValue(); void GetBoundingRectangles(); void GetEnclosingElement();
+  [return: MarshalAs(UnmanagedType.BStr)] string GetText(int maxLength);
+}
+
 public static class CmdUia {
   const int BoundingRectangle = 30001, ControlType = 30003, Name = 30005, HasKeyboardFocus = 30008,
     IsKeyboardFocusable = 30009, IsEnabled = 30010, IsPassword = 30019, IsOffscreen = 30022,
@@ -656,7 +690,7 @@ public static class CmdUia {
   [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
   [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
 
-  static readonly Dictionary<int, string> Roles = new Dictionary<int, string> {
+  internal static readonly Dictionary<int, string> Roles = new Dictionary<int, string> {
     {50000,"Button"},{50002,"CheckBox"},{50003,"ComboBox"},{50004,"Edit"},{50005,"Link"},{50006,"Image"},
     {50007,"ListItem"},{50008,"List"},{50009,"Menu"},{50011,"MenuItem"},{50013,"RadioButton"},{50015,"Slider"},
     {50018,"Tab"},{50019,"TabItem"},{50020,"Text"},{50021,"ToolBar"},{50023,"Tree"},{50024,"TreeItem"},
@@ -668,7 +702,7 @@ public static class CmdUia {
   // The last snapshot's elements; an id is an index into it, valid until the next Read.
   static List<IUIAutomationElement> last = new List<IUIAutomationElement>();
 
-  static IUIAutomation Uia() {
+  internal static IUIAutomation Uia() {
     if (uia == null) uia = (IUIAutomation)new CUIAutomation();
     return uia;
   }
@@ -687,9 +721,9 @@ public static class CmdUia {
   // Depth first, so the order is the window's own, top to bottom — "the second video" depends on
   // it — and never into a subtree that is off screen. A flat FindAll over WhatsApp walked its
   // whole message history, ~21,000 elements, in 2.4 s; this visits ~360 in ~90 ms.
-  const int MaxVisited = 4000;
+  internal const int MaxVisited = 4000;
 
-  static void Walk(IUIAutomationElement parent, IUIAutomationCondition view, IUIAutomationCacheRequest cache,
+  internal static void Walk(IUIAutomationElement parent, IUIAutomationCondition view, IUIAutomationCacheRequest cache,
                    List<IUIAutomationElement> into, ref int visited) {
     IUIAutomationElementArray children = parent.FindAllBuildCache(2, view, cache);   // TreeScope_Children
     int count = children.get_Length();
@@ -707,7 +741,7 @@ public static class CmdUia {
     IUIAutomation u = Uia();
     IUIAutomationElement window = u.ElementFromHandle(new IntPtr(handle));
     IUIAutomationCacheRequest cache = u.CreateCacheRequest();
-    foreach (int id in new int[] { Name, ControlType, IsOffscreen, IsEnabled, IsPassword, IsKeyboardFocusable, IsValuePatternAvailable, Value, HelpText, BoundingRectangle })
+    foreach (int id in new int[] { Name, ControlType, IsOffscreen, IsEnabled, IsPassword, IsKeyboardFocusable, IsValuePatternAvailable, Value, HelpText, BoundingRectangle, HasKeyboardFocus })
       cache.AddProperty(id);
     List<IUIAutomationElement> found = new List<IUIAutomationElement>();
     int visited = 0;
@@ -715,8 +749,14 @@ public static class CmdUia {
     return found;
   }
 
-  // {"elements":[{"id","role","name","value"?,"editable"}]}, top of the window first.
+  // {"elements":[{"id","role","name","value"?,"editable","bounds"?,"focused"?}]}, top of the window
+  // first. Read per-monitor DPI aware, so bounds are physical pixels on a scaled second screen too.
   public static string Read(long handle) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+    try { return ReadAware(handle); } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
+  }
+
+  static string ReadAware(long handle) {
     List<IUIAutomationElement> all;
     // Chrome has been seen to fail one read with UIA_E_ELEMENTNOTAVAILABLE while its page
     // changes, and succeed straight after.
@@ -756,6 +796,11 @@ public static class CmdUia {
         double middle = (r[1] + r[3] / 2 - frame[1]) / frame[3];
         json.Append(",\"where\":\"").Append(middle < 0.33 ? "top" : middle > 0.67 ? "bottom" : "middle").Append('"');
       }
+      if (r != null && r[2] > 0 && r[3] > 0)
+        json.Append(",\"bounds\":[").Append((int)r[0]).Append(',').Append((int)r[1]).Append(',')
+          .Append((int)(r[0] + r[2])).Append(',').Append((int)(r[1] + r[3])).Append(']');
+      object focus = e.GetCachedPropertyValue(HasKeyboardFocus);
+      if (focus is bool && (bool)focus) json.Append(",\"focused\":true");
       json.Append(",\"editable\":").Append(editable ? "true" : "false").Append('}');
       last.Add(e);
     }
@@ -764,6 +809,18 @@ public static class CmdUia {
 
   // Invoke when the element offers it — a link or button, without moving the mouse. Otherwise a
   // real click in its middle: WhatsApp's chat rows offer nothing else.
+  // A UIA pattern by name: "invoke" | "select" | "expand" | "scroll_into_view". Throws, naming
+  // the action, when the element does not offer it — the model then clicks instead.
+  public static void Act(int id, string action) {
+    IUIAutomationElement e = last[id];
+    object pattern = e.GetCurrentPattern(action == "invoke" ? 10000 : action == "select" ? 10010 : action == "expand" ? 10005 : 10017);
+    if (pattern == null) throw new Exception("This element cannot " + action.Replace('_', ' ') + "; click it instead");
+    if (action == "invoke") ((IUIAutomationInvokePattern)pattern).Invoke();
+    else if (action == "select") ((IUIAutomationSelectionItemPattern)pattern).Select();
+    else if (action == "expand") ((IUIAutomationExpandCollapsePattern)pattern).Expand();
+    else ((IUIAutomationScrollItemPattern)pattern).ScrollIntoView();
+  }
+
   public static string Click(int id) {
     IUIAutomationElement e = last[id];
     object invokable = e.GetCurrentPropertyValue(IsInvokePatternAvailable);
@@ -807,6 +864,371 @@ public static class CmdUia {
     } finally {
       if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
     }
+  }
+}
+
+// The assistant's screenshots (capture.ts). In this block, not SCREEN's, because hiding password
+// boxes needs the UIA types above, and a type cannot be shared across two Add-Type assemblies.
+// Everything runs per-monitor DPI aware, so the monitor, the window rectangles, UIA's bounds and
+// CopyFromScreen all speak the same physical pixels on a scaled second screen.
+public static class CmdCapture {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int Size; public RECT Monitor; public RECT Work; public uint Flags; }
+  delegate bool EnumProc(IntPtr hwnd, IntPtr data);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+  [DllImport("user32.dll")] static extern bool GetMonitorInfoW(IntPtr monitor, ref MONITORINFO info);
+  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr data);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+  [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr hwnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder text, int max);
+  [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+  const int IsOffscreen = 30022, IsPassword = 30019, BoundingRectangle = 30001;
+  // Over this, PNG gives way to JPEG: a photo or video frame on screen can make a PNG bigger than a
+  // provider accepts per image (Bedrock: 3.75 MB), while a screen of text stays far below it.
+  const int MaxPngBytes = 3000000;
+  // Windows already walked once (see Hidden), and the margin Chromium gets after that first walk.
+  static readonly HashSet<long> Seen = new HashSet<long>();
+  const int WakeMs = 200;
+
+  // A window's rectangle in physical pixels, {"x","y","width","height"}: where the classic screen
+  // step reads text off the pixels when the window's tree is thin (BlueStacks).
+  public static string WindowRect(long handle) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));   // PER_MONITOR_AWARE_V2
+    try {
+      RECT r;
+      if (!GetWindowRect(new IntPtr(handle), out r)) throw new Exception("No such window");
+      return "{\"x\":" + r.Left + ",\"y\":" + r.Top + ",\"width\":" + (r.Right - r.Left) + ",\"height\":" + (r.Bottom - r.Top) + "}";
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
+  }
+
+  // 0 = the display under the foreground window, else the one the window is (mostly) on.
+  public static string Display(long handle) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));   // PER_MONITOR_AWARE_V2
+    try {
+      IntPtr hwnd = handle != 0 ? new IntPtr(handle) : GetForegroundWindow();
+      // NEAREST for a real window; with none in front (desktop focused), the primary display.
+      IntPtr monitor = MonitorFromWindow(hwnd, hwnd == IntPtr.Zero ? 1u : 2u);
+      MONITORINFO info = new MONITORINFO();
+      info.Size = Marshal.SizeOf(typeof(MONITORINFO));
+      if (!GetMonitorInfoW(monitor, ref info)) throw new Exception("No screen found");
+      RECT m = info.Monitor;
+      return "{\"x\":" + m.Left + ",\"y\":" + m.Top + ",\"width\":" + (m.Right - m.Left) + ",\"height\":" + (m.Bottom - m.Top) + "}";
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
+  }
+
+  // The physical area, password boxes blacked out, scaled to outWidth x outHeight.
+  // {"data":base64,"mimeType","redacted":n}
+  public static string Grab(int left, int top, int width, int height, int outWidth, int outHeight) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+    try {
+      RECT area = new RECT { Left = left, Top = top, Right = left + width, Bottom = top + height };
+      // Walked before and after the copy, and both sets blacked out: a login box that appeared
+      // during the walk (a page still loading) was copied in plain view when only the walk before
+      // counted (T9-T13 review, I5). A box on screen at the copy is in at least one of the two.
+      List<RECT> hidden = new List<RECT>();
+      foreach (RECT r in Hidden(area)) Merge(hidden, r);
+      using (Bitmap raw = new Bitmap(width, height, PixelFormat.Format24bppRgb)) {
+        using (Graphics g = Graphics.FromImage(raw)) {
+          g.CopyFromScreen(left, top, 0, 0, new Size(width, height));
+          foreach (RECT r in Hidden(area)) Merge(hidden, r);
+          // Before scaling, so no blurred edge of a password survives the resize.
+          foreach (RECT r in hidden) g.FillRectangle(Brushes.Black, r.Left - left, r.Top - top, r.Right - r.Left, r.Bottom - r.Top);
+        }
+        if (outWidth == width && outHeight == height) return Encode(raw, hidden.Count);
+        using (Bitmap scaled = new Bitmap(outWidth, outHeight, PixelFormat.Format24bppRgb)) {
+          using (Graphics g = Graphics.FromImage(scaled))
+          using (ImageAttributes edges = new ImageAttributes()) {
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            edges.SetWrapMode(WrapMode.TileFlipXY);   // no dark halo along the image's border
+            g.DrawImage(raw, new Rectangle(0, 0, outWidth, outHeight), 0, 0, width, height, GraphicsUnit.Pixel, edges);
+          }
+          return Encode(scaled, hidden.Count);
+        }
+      }
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
+  }
+
+  static string Encode(Bitmap image, int redacted) {
+    string mime = "image/png";
+    byte[] bytes;
+    using (MemoryStream png = new MemoryStream()) { image.Save(png, ImageFormat.Png); bytes = png.ToArray(); }
+    if (bytes.Length > MaxPngBytes) {
+      mime = "image/jpeg";
+      ImageCodecInfo jpeg = null;
+      foreach (ImageCodecInfo codec in ImageCodecInfo.GetImageEncoders()) if (codec.MimeType == mime) jpeg = codec;
+      using (EncoderParameters quality = new EncoderParameters(1))
+      using (MemoryStream jpg = new MemoryStream()) {
+        quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 85L);
+        image.Save(jpg, jpeg, quality);
+        bytes = jpg.ToArray();
+      }
+    }
+    return "{\"data\":\"" + Convert.ToBase64String(bytes) + "\",\"mimeType\":\"" + mime + "\",\"redacted\":" + redacted + "}";
+  }
+
+  // What must not leave the machine: every on-screen password box (UIA IsPassword) of every
+  // window showing in the area. A window whose tree cannot be read twice running is hidden whole —
+  // not knowing whether it shows a password is treated as if it does; so is a hung window, whose
+  // tree would only time out.
+  // The desktop (Progman / WorkerW) is skipped: it never holds a password box, and its tree took
+  // 10 s of a 10.6 s screenshot on the dev machine. Every app window together took ~0.5 s.
+  // ponytail: covered windows are walked too; skipping them needs to know which windows above are
+  // really opaque (a transparent overlay would hide a password from the check, not the picture).
+  static List<RECT> Hidden(RECT area) {
+    List<IntPtr> windows = new List<IntPtr>();
+    StringBuilder cls = new StringBuilder(32);
+    EnumWindows(delegate (IntPtr hwnd, IntPtr data) {
+      int cloaked;
+      RECT r;
+      if (IsWindowVisible(hwnd) && !IsIconic(hwnd) && GetWindowRect(hwnd, out r) && Intersects(r, area) &&
+          !(DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) == 0 && cloaked != 0)) {   // DWMWA_CLOAKED
+        cls.Length = 0;
+        GetClassNameW(hwnd, cls, 32);
+        string name = cls.ToString();
+        if (name != "Progman" && name != "WorkerW") windows.Add(hwnd);
+      }
+      return true;
+    }, IntPtr.Zero);
+    IUIAutomation u = CmdUia.Uia();
+    IUIAutomationCacheRequest cache = u.CreateCacheRequest();
+    foreach (int id in new int[] { IsOffscreen, IsPassword, BoundingRectangle }) cache.AddProperty(id);
+    // Chromium (Chrome, Edge, Electron, WebView2) builds its page's tree only once something walks
+    // into it: a fresh Chrome's first screenshot showed its password box with nothing found, the
+    // second found it. Asking for the window's children alone did not wake it, even 1.5 s later; one
+    // full walk did, with no wait at all. So a window seen for the first time is walked once
+    // first, all of them before one short wait kept for slower machines.
+    bool asked = false;
+    foreach (IntPtr hwnd in windows) {
+      if (!Seen.Add(hwnd.ToInt64()) || IsHungAppWindow(hwnd)) continue;
+      try { int n = 0; CmdUia.Walk(u.ElementFromHandle(hwnd), u.get_ControlViewCondition(), cache, new List<IUIAutomationElement>(), ref n); asked = true; } catch (Exception) { }
+    }
+    if (asked) System.Threading.Thread.Sleep(WakeMs);
+    List<RECT> hidden = new List<RECT>();
+    foreach (IntPtr hwnd in windows) {
+      List<IUIAutomationElement> found = null;
+      if (IsHungAppWindow(hwnd)) {
+        RECT whole;
+        if (GetWindowRect(hwnd, out whole)) hidden.Add(whole);
+        continue;
+      }
+      for (int attempt = 0; attempt < 2 && found == null; attempt++) {
+        try {
+          found = new List<IUIAutomationElement>();
+          int visited = 0;
+          IUIAutomationElement root = u.ElementFromHandle(hwnd);
+          CmdUia.Walk(root, u.get_ControlViewCondition(), cache, found, ref visited);
+          // The walk stops at MaxVisited without saying so, and a password box past that point
+          // was missed (review I5). Then ask UIA for the password boxes themselves: slower, but
+          // only on huge trees, and complete.
+          if (visited >= CmdUia.MaxVisited) {
+            found = new List<IUIAutomationElement>();
+            IUIAutomationElementArray boxes = root.FindAllBuildCache(4, u.CreatePropertyCondition(IsPassword, true), cache);   // TreeScope_Descendants
+            for (int i = 0; i < boxes.get_Length(); i++) found.Add(boxes.GetElement(i));
+          }
+        } catch (Exception) {
+          found = null;
+          if (attempt == 0) System.Threading.Thread.Sleep(150);
+        }
+      }
+      if (found == null) {
+        RECT whole;
+        if (GetWindowRect(hwnd, out whole)) hidden.Add(whole);
+        continue;
+      }
+      foreach (IUIAutomationElement e in found) {
+        object password = e.GetCachedPropertyValue(IsPassword);
+        if (!(password is bool) || !(bool)password) continue;
+        double[] b = e.GetCachedPropertyValue(BoundingRectangle) as double[];
+        if (b == null || b[2] <= 0 || b[3] <= 0) continue;
+        hidden.Add(new RECT { Left = (int)Math.Floor(b[0]), Top = (int)Math.Floor(b[1]),
+                              Right = (int)Math.Ceiling(b[0] + b[2]), Bottom = (int)Math.Ceiling(b[1] + b[3]) });
+      }
+    }
+    return hidden;
+  }
+
+  // The same box seen by both walks, a pixel or two apart while a page settles, is one box: the
+  // union covers both places, and the count the model is told stays right.
+  static void Merge(List<RECT> into, RECT r) {
+    for (int i = 0; i < into.Count; i++) {
+      RECT a = into[i];
+      if (!Intersects(a, r)) continue;
+      into[i] = new RECT { Left = Math.Min(a.Left, r.Left), Top = Math.Min(a.Top, r.Top),
+                           Right = Math.Max(a.Right, r.Right), Bottom = Math.Max(a.Bottom, r.Bottom) };
+      return;
+    }
+    into.Add(r);
+  }
+
+  static bool Intersects(RECT a, RECT b) {
+    return a.Left < b.Right && b.Left < a.Right && a.Top < b.Bottom && b.Top < a.Bottom;
+  }
+
+  // The physical area as a PNG file, nothing hidden: for OCR, which stays on this machine.
+  public static void SavePng(int left, int top, int width, int height, string path) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+    try {
+      using (Bitmap raw = new Bitmap(width, height, PixelFormat.Format24bppRgb)) {
+        using (Graphics g = Graphics.FromImage(raw)) g.CopyFromScreen(left, top, 0, 0, new Size(width, height));
+        raw.Save(path, ImageFormat.Png);
+      }
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
+  }
+}
+
+// What the assistant's guard looks at before a pixel action (probe.ts): the element under a
+// point with its two nearest ancestors, and the focused element with its window.
+public static class CmdProbe {
+  const int ControlType = 30003, Name = 30005, HelpText = 30013;
+  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int max);
+
+  static string Role(IUIAutomationElement e) {
+    object id = e.GetCurrentPropertyValue(ControlType);
+    string role;
+    return id is int && CmdUia.Roles.TryGetValue((int)id, out role) ? role : "Other";
+  }
+  static string Prop(IUIAutomationElement e, int id) { return ((e.GetCurrentPropertyValue(id) as string) ?? "").Trim(); }
+  static string Node(IUIAutomationElement e) {
+    return "{\"role\":\"" + Role(e) + "\",\"name\":\"" + Esc(Prop(e, Name)) + "\"}";
+  }
+  static string Esc(string text) {
+    StringBuilder escaped = new StringBuilder(text.Length + 8);
+    foreach (char c in text) {
+      if (c == '"') escaped.Append("\\\"");
+      else if (c == '\\') escaped.Append("\\\\");
+      else if (c < 0x20) escaped.Append(' ');
+      else escaped.Append(c);
+    }
+    return escaped.ToString();
+  }
+
+  // [{"role","name"}, …] innermost first; "[]" where nothing answers.
+  public static string At(int x, int y) {
+    IntPtr previous = SetThreadDpiAwarenessContext(new IntPtr(-4));   // the point is physical
+    try {
+      IUIAutomation u = CmdUia.Uia();
+      UiaPoint point = new UiaPoint { X = x, Y = y };
+      IUIAutomationElement e = u.ElementFromPoint(point);
+      IUIAutomationTreeWalker walker = u.get_ControlViewWalker();
+      List<string> chain = new List<string>();
+      for (int i = 0; i < 3 && e != null; i++) {
+        chain.Add(Node(e));
+        try { e = walker.GetParentElement(e); } catch (COMException) { e = null; }
+      }
+      return "[" + string.Join(",", chain.ToArray()) + "]";
+    } catch (COMException) {
+      return "[]";
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
+  }
+
+  // {"role","name","help","window","program"}, or "null" when nothing has the focus.
+  public static string Focused() {
+    IUIAutomationElement e;
+    try { e = CmdUia.Uia().GetFocusedElement(); } catch (COMException) { return "null"; }
+    if (e == null) return "null";
+    IntPtr hwnd = GetForegroundWindow();
+    StringBuilder title = new StringBuilder(512);
+    GetWindowTextW(hwnd, title, 512);
+    uint pid;
+    GetWindowThreadProcessId(hwnd, out pid);
+    string program = "";
+    try { program = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch (Exception) { }
+    return "{\"role\":\"" + Role(e) + "\",\"name\":\"" + Esc(Prop(e, Name)) + "\",\"help\":\"" + Esc(Prop(e, HelpText)) +
+      "\",\"window\":\"" + Esc(title.ToString()) + "\",\"program\":\"" + Esc(program) + "\"}";
+  }
+
+  // The focused box's text as a JSON string, for learning from the user's own fixes (field.ts);
+  // "null" when nothing with a value has the focus, and always for a password box.
+  public static string FocusedText() {
+    IUIAutomationElement e;
+    try { e = CmdUia.Uia().GetFocusedElement(); } catch (COMException) { return "null"; }
+    if (e == null) return "null";
+    object password = e.GetCurrentPropertyValue(30019);
+    if (password is bool && (bool)password) return "null";
+    object hasValue = e.GetCurrentPropertyValue(30043);
+    if (!(hasValue is bool) || !(bool)hasValue) return FocusedTextByPattern(e);
+    string value = e.GetCurrentPropertyValue(30045) as string;
+    return value == null ? "null" : "\"" + Esc(value) + "\"";
+  }
+
+  // A box with no Value pattern read through its Text pattern (Chromium's editable divs: WhatsApp,
+  // Gmail, web chat inputs). Before this, every dictation into one ended the watch at the first
+  // poll, "could not read the field" (Windows hand test, 2026-11-20). Capped: only a box is wanted.
+  static string FocusedTextByPattern(IUIAutomationElement e) {
+    object hasText = e.GetCurrentPropertyValue(30040);
+    if (!(hasText is bool) || !(bool)hasText) return "null";
+    try {
+      IUIAutomationTextPattern pattern = (IUIAutomationTextPattern)e.GetCurrentPattern(10014);
+      string text = pattern.DocumentRange.GetText(20000);
+      return text == null ? "null" : "\"" + Esc(text) + "\"";
+    } catch (Exception) { return "null"; }
+  }
+}
+`;
+
+/**
+ * Windows' own OCR (Windows.Media.Ocr, the engine behind the Snipping Tool's text actions), for
+ * the guard on apps with no tree: what label sits under a click. WinRT from Windows PowerShell
+ * 5.1: types loaded by their WindowsRuntime name, async calls awaited through AsTask. Languages
+ * are the user's profile languages (English always; Hindi when its language pack is installed).
+ * Defined once per worker; WinRT loads on the first call. Writes [{"text","box"}] in physical px.
+ */
+const OCR =
+  String.raw`
+function global:Invoke-SubxOcr([int]$left, [int]$top, [int]$width, [int]$height) {
+  if (-not $global:SubxAwait) {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+    $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
+    $null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+    $global:SubxAsTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+      $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` +
+  "`" +
+  String.raw`1' } | Select-Object -First 1
+    $global:SubxAwait = { param($op, [Type]$type) $t = $global:SubxAsTask.MakeGenericMethod($type).Invoke($null, @($op)); if (-not $t.Wait(10000)) { throw 'OCR step timed out' }; $t.Result }
+    $global:SubxOcrEngine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+  }
+  # No engine is "could not read", never "nothing there": the click guard asks on an error.
+  if (-not $global:SubxOcrEngine) { throw 'No Windows OCR engine for the profile languages' }
+  $path = Join-Path $env:TEMP ('subx-ocr-' + [guid]::NewGuid() + '.png')
+  $stream = $null
+  try {
+    [CmdCapture]::SavePng($left, $top, $width, $height, $path)
+    $file = & $global:SubxAwait ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
+    $stream = & $global:SubxAwait ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+    $decoder = & $global:SubxAwait ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+    $bitmap = & $global:SubxAwait ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+    $result = & $global:SubxAwait ($global:SubxOcrEngine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+    $lines = foreach ($line in $result.Lines) {
+      $x0 = ($line.Words | ForEach-Object { $_.BoundingRect.X } | Measure-Object -Minimum).Minimum
+      $y0 = ($line.Words | ForEach-Object { $_.BoundingRect.Y } | Measure-Object -Minimum).Minimum
+      $x1 = ($line.Words | ForEach-Object { $_.BoundingRect.X + $_.BoundingRect.Width } | Measure-Object -Maximum).Maximum
+      $y1 = ($line.Words | ForEach-Object { $_.BoundingRect.Y + $_.BoundingRect.Height } | Measure-Object -Maximum).Maximum
+      @{ text = $line.Text; box = @{ x = [int]($left + $x0); y = [int]($top + $y0); width = [int]($x1 - $x0); height = [int]($y1 - $y0) } }
+    }
+    ConvertTo-Json -Compress -Depth 4 @($lines)
+  } finally {
+    # Disposed first: a locked crop could not be deleted and would stay in TEMP unredacted.
+    if ($stream) { $stream.Dispose() }
+    Remove-Item -LiteralPath $path -ErrorAction SilentlyContinue
   }
 }
 `;
@@ -973,6 +1395,7 @@ export const INTEROP = [
   `Add-Type -TypeDefinition @'${WINDOWS}'@ -ErrorAction Stop`,
   `Add-Type -TypeDefinition @'${BRIGHTNESS}'@ -ErrorAction Stop`,
   `Add-Type -TypeDefinition @'${SCREEN}'@ -ReferencedAssemblies System.Drawing -ErrorAction Stop`,
-  `Add-Type -TypeDefinition @'${UIA}'@ -ErrorAction Stop`,
+  `Add-Type -TypeDefinition @'${UIA}'@ -ReferencedAssemblies System.Drawing -ErrorAction Stop`,
   `Add-Type -TypeDefinition @'${BLUETOOTH}'@ -ErrorAction Stop`,
+  OCR,
 ];

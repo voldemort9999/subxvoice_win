@@ -1,5 +1,16 @@
-import type { ScreenDriver, ScreenElement, ScreenSnapshot, TextInserter } from "@subx/core";
+import type {
+  OcrLine,
+  Rect,
+  ScreenAction,
+  ScreenDriver,
+  ScreenElement,
+  ScreenLook,
+  ScreenSnapshot,
+  Shot,
+  TextInserter,
+} from "@subx/core";
 import type { WindowInfo } from "./commands";
+import { asOwnInput } from "./own-input";
 import type { PowerShellWorker } from "./powershell";
 import { sendChord, VK, waitForModifiersUp } from "./win32";
 
@@ -66,16 +77,47 @@ export interface ScreenDeps {
    * "Aryan ko hi bhejo" with WhatsApp closed used to stop at a search box that was not there.
    */
   launchNamed(hint: string): Promise<boolean>;
+  /** Pictures for `ScreenSnapshot.look`; without it a snapshot has none. Its own instance, so the assistant's frame is untouched. */
+  capture?: { ofWindow(handle: number): Promise<Shot> };
+  /** A real click at a physical point; without it, text read off the pixels is not offered as a target. */
+  clickAt?(x: number, y: number): Promise<void>;
+  /** Ctrl+A and the wait for the user's modifiers; tests replace the real keyboard. */
+  keys?: { selectAll(): void; modifiersUp(): Promise<unknown> };
 }
+
+const REAL_KEYS = {
+  selectAll: () => void sendChord([VK.control], 0x41),
+  modifiersUp: () => waitForModifiersUp(),
+};
+
+/** How long typed text is given to show in the box's value; WebView2 apps report it late. */
+const READ_BACK_MS = 2500;
+const READ_STEP_MS = 250;
+/** A window just brought to the front takes the click into its box only after it has settled. */
+const FRONT_SETTLE_MS = 200;
+
+/** Fewer named elements than this, and the tree is not the whole window: its text is read off the pixels. */
+const THIN_TREE = 10;
 
 export class WinScreenDriver implements ScreenDriver {
   private window: WindowInfo | null = null;
   private elements: ScreenElement[] = [];
 
+  /** Present only when the deps can click a point (ScreenDriver.clickAt). */
+  readonly clickAt?: (x: number, y: number) => Promise<void>;
+
   constructor(
     private readonly worker: PowerShellWorker,
     private readonly deps: ScreenDeps,
-  ) {}
+  ) {
+    const click = deps.clickAt;
+    if (click)
+      this.clickAt = async (x, y) => {
+        if (this.window) await this.worker.run(`[CmdWindows]::Focus(${this.window.handle})`);
+        await asOwnInput(() => click(x, y));
+        await sleep(SETTLE_MS);
+      };
+  }
 
   async read(hint: string): Promise<ScreenSnapshot> {
     let { window: target, named } = chooseWindow(hint, await this.deps.windows());
@@ -113,11 +155,56 @@ export class WinScreenDriver implements ScreenDriver {
     }
     this.window = target;
     this.elements = elements;
-    return { window: target.title, elements };
+    const { capture } = this.deps;
+    const window = target;
+    return {
+      window: target.title,
+      elements,
+      ...(capture ? { look: () => this.look(capture, window, elements) } : {}),
+    };
   }
 
+  /**
+   * The picture, and OCR over the unnamed elements' area only — one call for all of them, and
+   * none when the tree named everything. OCR is a help, not a need: a failed read gives no text.
+   */
+  private async look(
+    capture: NonNullable<ScreenDeps["capture"]>,
+    window: WindowInfo,
+    elements: ScreenElement[],
+  ): Promise<ScreenLook> {
+    const shot = await capture.ofWindow(window.handle);
+    const ocr = (x: number, y: number, width: number, height: number) =>
+      this.worker.json<OcrLine[]>(`Invoke-SubxOcr ${x} ${y} ${width} ${height}`).catch(() => []);
+    // A thin tree (BlueStacks' instance list is four elements) leaves the window's real content
+    // to the pixels: read the whole window, so its rows can be offered and clicked (S-024).
+    const named = elements.filter((element) => element.name.trim()).length;
+    if (named < THIN_TREE && this.clickAt) {
+      const area = await this.worker
+        .json<Rect>(`[CmdCapture]::WindowRect(${window.handle})`)
+        .catch(() => null);
+      if (area) return { shot, text: await ocr(area.x, area.y, area.width, area.height) };
+    }
+    const unnamed = elements.flatMap((element) =>
+      !element.name.trim() && element.bounds ? [element.bounds] : [],
+    );
+    if (!unnamed.length) return { shot, text: [] };
+    const left = Math.min(...unnamed.map((b) => b[0]));
+    const top = Math.min(...unnamed.map((b) => b[1]));
+    const right = Math.max(...unnamed.map((b) => b[2]));
+    const bottom = Math.max(...unnamed.map((b) => b[3]));
+    return { shot, text: await ocr(left, top, right - left, bottom - top) };
+  }
+
+  // CmdUia clicks with the real mouse from PowerShell: that is the app's input, not the user's.
   async click(id: number): Promise<void> {
-    await this.worker.run(`${this.front()}[CmdUia]::Click(${id})`);
+    await asOwnInput(() => this.worker.run(`${this.front()}[CmdUia]::Click(${id})`));
+    await sleep(SETTLE_MS);
+  }
+
+  /** Through a UIA pattern (CmdUia.Act); the window still comes forward, so the user sees it. */
+  async act(id: number, action: ScreenAction): Promise<void> {
+    await asOwnInput(() => this.worker.run(`${this.front()}[CmdUia]::Act(${id}, '${action}')`));
     await sleep(SETTLE_MS);
   }
 
@@ -128,27 +215,44 @@ export class WinScreenDriver implements ScreenDriver {
    * said so, not reported as done.
    */
   async typeInto(id: number, text: string): Promise<void> {
-    await this.worker.run(`${this.front()}[CmdUia]::Focus(${id})`);
-    await sleep(150);
-    await waitForModifiersUp();
-    sendChord([VK.control], 0x41); // Ctrl+A, within the focused box
-    await sleep(60);
-    // Pasted, like dictation: Devanagari and emoji arrive intact, and no Enter is ever pressed.
-    await this.deps.inserter.insert(text);
-    // Read back for up to ~1.5 s: a WhatsApp group's message box reported its new text late, and a
-    // single read at 400 ms called a message that had landed a failure.
-    let landed = false;
-    let readable = false;
-    for (let tries = 0; tries < 6 && !landed; tries++) {
-      await sleep(250);
-      const now = await this.worker.run(`[CmdUia]::CurrentValue(${id})`).catch(() => null);
-      readable ||= typeof now === "string";
-      landed = typeof now === "string" && squash(now).includes(squash(text));
-    }
-    if (readable && !landed) {
-      const name = this.elements.find((element) => element.id === id)?.name ?? "the box";
-      throw new Error(`Typed "${text}", but "${name}" doesn't show it`);
-    }
+    const keys = this.deps.keys ?? REAL_KEYS;
+    /** One go: click into the box, replace what it holds, paste, read back. */
+    const attempt = async (): Promise<"landed" | "missing" | "unreadable"> => {
+      // The window first, on its own, given a moment: clicked in the same breath as it came
+      // forward, the new WhatsApp (a WebView2 app) often kept the caret out of its box, and the
+      // paste went nowhere (laptop demo, 2026-11-19 — one search in two failed).
+      if (this.window) {
+        await this.worker.run(`[void][CmdWindows]::Focus(${this.window.handle})`);
+        await sleep(FRONT_SETTLE_MS);
+      }
+      await this.worker.run(`[CmdUia]::Focus(${id})`);
+      await sleep(150);
+      await keys.modifiersUp();
+      keys.selectAll(); // Ctrl+A, within the focused box
+      await sleep(60);
+      // Pasted, like dictation: Devanagari and emoji arrive intact, and no Enter is ever pressed.
+      await this.deps.inserter.insert(text);
+      // WebView2 boxes report their new value late, later still on a slow laptop: read for a while,
+      // stopping as soon as it shows.
+      let readable = false;
+      for (let waited = 0; waited < READ_BACK_MS; waited += READ_STEP_MS) {
+        await sleep(READ_STEP_MS);
+        const now = await this.worker.run(`[CmdUia]::CurrentValue(${id})`).catch(() => null);
+        readable ||= typeof now === "string";
+        if (typeof now === "string" && squash(now).includes(squash(text))) return "landed";
+      }
+      return readable ? "missing" : "unreadable";
+    };
+    await asOwnInput(async () => {
+      // Once more when it did not show: click in again and replace — Ctrl+A first, so text that
+      // did land after all is replaced, never doubled.
+      let result = await attempt();
+      if (result === "missing") result = await attempt();
+      if (result === "missing") {
+        const name = this.elements.find((element) => element.id === id)?.name ?? "the box";
+        throw new Error(`Typed "${text}", but "${name}" doesn't show it`);
+      }
+    });
     await sleep(400);
   }
 
