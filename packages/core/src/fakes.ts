@@ -1,5 +1,4 @@
 // Fake plugs: run the pipeline and tests without a microphone, an OS or an API key.
-import type { LlmProvider, LlmRequest, LlmResponse } from "./contracts/llm";
 import type { Platform, TextInserter } from "./contracts/platform";
 import type { DictionaryStore, HistoryStore } from "./contracts/store";
 import type { SttProvider, Transcript } from "./contracts/stt";
@@ -19,26 +18,15 @@ export class FakeStt implements SttProvider {
   }
 }
 
-export class FakeLlm implements LlmProvider {
-  readonly id = "fake";
-  readonly requests: LlmRequest[] = [];
-  private readonly reply: string;
-
-  constructor(reply: string) {
-    this.reply = reply;
-  }
-
-  async complete(request: LlmRequest): Promise<LlmResponse> {
-    this.requests.push(request);
-    return { text: this.reply, toolCalls: [] };
-  }
-}
-
 export class FakeInserter implements TextInserter {
   readonly inserted: string[] = [];
+  /** As if no text box had the focus: nothing is typed. */
+  noTextBox = false;
 
-  async insert(text: string): Promise<void> {
+  async insert(text: string): Promise<"pasted" | "nowhere"> {
+    if (this.noTextBox) return "nowhere";
     this.inserted.push(text);
+    return "pasted";
   }
 }
 
@@ -86,9 +74,9 @@ export function fakePlatform(): Platform & { inserter: FakeInserter } {
   return {
     os: "fake",
     hotkey: {
-      defaultBindings: () => [{ keys: "ctrl+win", mode: "exact" }],
-      supportedKeys: () => ["ctrl+win", "ctrl+alt"],
-      accepts: (keys: string) => ["ctrl+win", "ctrl+alt"].includes(keys),
+      defaultBindings: () => [{ keys: "right_option", mode: "exact" }],
+      supportedKeys: () => ["right_option", "fn"],
+      accepts: (keys: string) => ["right_option", "fn"].includes(keys),
       register: async () => {},
       unregisterAll: async () => {},
     },
@@ -100,5 +88,6 @@ export function fakePlatform(): Platform & { inserter: FakeInserter } {
       openSettings: async () => {},
     },
     context: { current: async () => ({ appName: "Fake App" }) },
+    desktop: { openApp: async () => {}, openUrl: async () => {} },
   };
 }

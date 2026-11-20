@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { resolveOne } from "./match";
+import { closest, resolveOne } from "./match";
+
+describe("closest", () => {
+  it("names the real one a misheard name is nearest to (friend's bench: 'Aryn' passed 0–13%)", () => {
+    expect(closest("Aryn", ["Arjun", "Aryan", "Yash arya"])).toBe("Aryan");
+    expect(closest("dragon", ["Dragon Bhai", "Drona"])).toBe("Dragon Bhai");
+  });
+
+  it("says nothing is close rather than offering a stranger", () => {
+    expect(closest("Aryn", ["Mummy", "Papa"])).toBeNull();
+    expect(closest("Aryn", [])).toBeNull();
+  });
+});
 
 const name = (item: { name: string }) => item.name;
 const apps = [{ name: "Google Chrome" }, { name: "Notepad" }, { name: "Notepad++" }, { name: "WhatsApp" }];
@@ -23,6 +35,17 @@ describe("resolveOne", () => {
     expect(match.chosen).toBeNull();
     expect(match.how).toBe("ambiguous");
     expect(match.candidates).toHaveLength(2);
+  });
+
+  it("treats a hyphen, dot or underscore like a space — a writer spells titles either way", () => {
+    // S-024: "BlueStacks Multi-Instance Manager" was asked for, the window is titled
+    // "BlueStacks Multi Instance Manager", and closing it failed with "Couldn't find".
+    const windows = [{ name: "BlueStacks Multi Instance Manager" }, { name: "Untitled - Notepad" }];
+    expect(resolveOne("BlueStacks Multi-Instance Manager", windows, name)).toMatchObject({
+      chosen: { name: "BlueStacks Multi Instance Manager" },
+      how: "exact",
+    });
+    expect(resolveOne("Untitled - Notepad", windows, name).how).toBe("exact");
   });
 
   it("says none when nothing matches, which is a different answer from ambiguous", () => {

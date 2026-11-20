@@ -1,4 +1,4 @@
-export type ErrorCode = "unsupported" | "permission_denied" | "provider";
+export type ErrorCode = "not_implemented" | "unsupported" | "permission_denied" | "provider";
 
 export class SubxError extends Error {
   readonly code: ErrorCode;
@@ -9,3 +9,6 @@ export class SubxError extends Error {
     this.code = code;
   }
 }
+
+export const notImplemented = (what: string) =>
+  new SubxError("not_implemented", `Not implemented yet: ${what}`);

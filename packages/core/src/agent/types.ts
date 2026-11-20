@@ -8,6 +8,8 @@
  * See docs/command-mode.md.
  */
 
+import type { OcrLine, Shot } from "../contracts/screen-control";
+
 export interface AgentAction {
   /** The option key the decider picks. Stable and snake_case: it is also what history records. */
   id: string;
@@ -60,24 +62,47 @@ export interface ScreenElement {
   editable: boolean;
   /** For a box: where it sits in the window, which can be all that names it. */
   where?: "top" | "middle" | "bottom";
+  /** [left, top, right, bottom] in physical screen pixels. */
+  bounds?: [number, number, number, number];
+  /** Has the keyboard focus. */
+  focused?: boolean;
 }
+
+/** UIA patterns that act without moving the mouse — and so also on a window behind others. */
+export type ScreenAction = "invoke" | "select" | "expand" | "scroll_into_view";
 
 export interface ScreenSnapshot {
   /** The window read, by title. */
   window: string;
   elements: ScreenElement[];
+  /**
+   * The same moment as pixels: a picture of the window's display (password boxes blacked out) and
+   * text OCR read inside the elements the tree left unnamed. Taken only when called — about a
+   * second — so a decider that cannot look never pays for it.
+   */
+  look?: () => Promise<ScreenLook>;
+}
+
+export interface ScreenLook {
+  shot: Shot;
+  /** OCR lines in physical pixels, from the area of the unnamed elements only. */
+  text: OcrLine[];
 }
 
 /**
- * The screen, as the OS's accessibility tree describes it — names and roles, never pixels. See
- * docs/command-mode.md, "Screen control".
+ * The screen, as the OS's accessibility tree describes it — names and roles; pixels only through a
+ * snapshot's `look`, for a decider that can read them. See docs/command-mode.md, "Screen control".
  */
 export interface ScreenDriver {
   /** The window this step is about — the one `hint` names, else the one in front — read now. */
   read(hint: string): Promise<ScreenSnapshot>;
   click(id: number): Promise<void>;
+  /** A real click at a point in physical pixels — text read off the latest `look`, which the tree lacks. */
+  clickAt?(x: number, y: number): Promise<void>;
   /** Focuses the element and types into it. Never presses Enter: typing is not sending. */
   typeInto(id: number, text: string): Promise<void>;
+  /** Acts through a UIA pattern; throws when the element does not offer it. The assistant's `ui` tool uses it. */
+  act?(id: number, action: ScreenAction): Promise<void>;
 }
 
 export interface StepResult {

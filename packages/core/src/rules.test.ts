@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDictionary, applyRules } from "./rules";
+import { applyDictionary } from "./rules";
 
 describe("applyDictionary", () => {
   it("replaces misheard phrases with the user's word, ignoring case and spacing", () => {
@@ -20,11 +20,5 @@ describe("applyDictionary", () => {
   it("does not treat $ in the replacement as a pattern", () => {
     const entries = [{ word: "$USD", misheardAs: ["dollar usd"] }];
     expect(applyDictionary("pay in dollar usd", entries)).toBe("pay in $USD");
-  });
-});
-
-describe("applyRules", () => {
-  it("cleans spacing before punctuation", () => {
-    expect(applyRules("  hello   world , how are you ? ", [])).toBe("hello world, how are you?");
   });
 });

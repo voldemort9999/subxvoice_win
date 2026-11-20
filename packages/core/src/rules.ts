@@ -21,16 +21,3 @@ export function applyDictionary(text: string, entries: DictionaryEntry[]): strin
   }
   return result;
 }
-
-/** Collapses stray spaces that STT output often contains. */
-export function normalizeSpacing(text: string): string {
-  return text
-    .replace(/[ \t]+/g, " ")
-    .replace(/ +([,.!?।])/g, "$1")
-    .trim();
-}
-
-/** The fast, deterministic cleanup that runs on every dictation — no AI involved. */
-export function applyRules(text: string, dictionary: DictionaryEntry[]): string {
-  return normalizeSpacing(applyDictionary(text, dictionary));
-}

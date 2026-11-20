@@ -4,32 +4,11 @@ export interface AudioClip {
   sampleRate: number;
 }
 
-/** Chosen by the hotkey: keep the user's exact words, or rewrite them in their style. */
 /**
- * What a held key means. "exact" and "style" dictate; "command" acts on what was said instead of
- * typing it (docs/command-mode.md).
+ * Which key was held. "command" is Windows' Follow My Words key: its words go to the assistant,
+ * never to the paste (apps/desktop workflow.ts).
  */
 export type Mode = "exact" | "style" | "command";
-
-/**
- * How non-Latin speech is written down. "native" keeps the language's own script (Devanagari for
- * Hindi); "roman" spells it phonetically in Latin letters (Hinglish). This is transliteration, not
- * translation — the words stay the user's.
- */
-export type ScriptPreference = "native" | "roman";
-
-/**
- * What the speaker actually wanted out of this dictation.
- *
- * "dictation" is the default and the overwhelming majority: type what I said. The other two mean
- * the words were an instruction — write me an email, write me a message — and the text that gets
- * pasted is composed rather than transcribed.
- */
-export type Intent = "dictation" | "email" | "message";
-
-/** How a composed email or message should read. Set per kind, because most people write formal
- * email and casual chat. */
-export type WritingTone = "professional" | "formal" | "casual";
 
 /** What the user is looking at while speaking. Every field is optional — OS support varies. */
 export interface AppContext {
@@ -43,14 +22,28 @@ export interface AppContext {
 /** A word the user cares about, plus the spellings STT tends to produce instead. */
 export interface DictionaryEntry {
   word: string;
+  /** The user's own rules: these spellings are replaced with `word` wherever they appear. */
   misheardAs: string[];
+  /** Who put it here: the user, or learned from a fix they made after a paste. */
+  source?: "you" | "learned";
+  /** When it was added, in ms. */
+  addedAt?: number;
+  /**
+   * For a learned word: what SUBXVoice had written instead. Shown in the dictionary and given to
+   * the rewrite as a hint; never replaced blindly, because a common word ("seller's") would then
+   * be changed in sentences that mean it.
+   */
+  writtenAs?: string[];
+  /** The app the fix was made in, for the dictionary to say where it was learned. */
+  learnedIn?: string;
 }
 
 /** Milliseconds spent in each pipeline stage. */
 export interface Timings {
   sttMs: number;
   rulesMs: number;
-  llmMs: number;
+  /** Records from before the server did the rewriting; new ones count it in `sttMs`. */
+  llmMs?: number;
   insertMs: number;
   totalMs: number;
 }
@@ -60,8 +53,6 @@ export interface SessionRecord {
   id: string;
   createdAt: number;
   mode: Mode;
-  /** Absent on records written before composing existed; treat as "dictation". */
-  intent?: Intent;
   context: AppContext;
   rawText: string;
   finalText: string;
