@@ -36,7 +36,12 @@ export function formatSpan(ms: number): string {
 export const formatCount = (value: number) => value.toLocaleString();
 
 export function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  // Always with AM/PM: "5:58" alone leaves the reader to guess morning or evening.
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 export function startOfDay(timestamp: number): number {
@@ -45,50 +50,49 @@ export function startOfDay(timestamp: number): number {
   return date.getTime();
 }
 
+/**
+ * The start of the day `days` calendar days from `dayStart` (negative goes back). Not `± n × 24 h`:
+ * where clocks change, one day a year is 23 hours long and one 25, and stepping by 24 h then lands
+ * an hour off midnight, so the streak broke and charts dropped days there (2026-11-20).
+ */
+export function addDays(dayStart: number, days: number): number {
+  const date = new Date(dayStart);
+  date.setDate(date.getDate() + days);
+  return startOfDay(date.getTime());
+}
+
+/** "1 word", "1,698 words". */
+export const formatWords = (count: number) => `${formatCount(count)} ${count === 1 ? "word" : "words"}`;
+
 export function dayLabel(timestamp: number): string {
   const today = startOfDay(Date.now());
   const day = startOfDay(timestamp);
   if (day === today) return "Today";
-  if (day === today - DAY_MS) return "Yesterday";
-  return new Date(timestamp).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  if (day === addDays(today, -1)) return "Yesterday";
+  const date = new Date(timestamp);
+  // This week a day's name is enough; further back the date says more than the weekday does.
+  if (day > addDays(today, -7)) return date.toLocaleDateString("en-GB", { weekday: "long" });
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 /** Days in a row, ending today (or yesterday), with at least one dictation. */
 export function streakDays(records: SessionRecord[]): number {
-  const days = new Set(records.map((record) => startOfDay(record.createdAt)));
+  return streakOf(new Set(records.map((record) => startOfDay(record.createdAt))));
+}
+
+/** The streak over the starts of the days that had a dictation. */
+export function streakOf(days: Set<number>): number {
   let day = startOfDay(Date.now());
-  if (!days.has(day)) day -= DAY_MS;
+  if (!days.has(day)) day = addDays(day, -1);
   let streak = 0;
   while (days.has(day)) {
     streak++;
-    day -= DAY_MS;
+    day = addDays(day, -1);
   }
   return streak;
 }
-
-const KEY_LABELS: Record<string, string> = {
-  ctrl: "Ctrl",
-  shift: "Shift",
-  alt: "Alt",
-  win: "Win",
-  esc: "Esc",
-  pageup: "Page Up",
-  pagedown: "Page Down",
-  capslock: "Caps Lock",
-};
-
-/**
- * "ctrl+shift+f9" → "Ctrl + Shift + F9". Windows accepts any combination, so this formats one
- * rather than looking it up.
- */
-export function hotkeyLabel(keys: string | undefined): string {
-  if (!keys) return "the hotkey";
-  return keys
-    .split("+")
-    .map((key) => KEY_LABELS[key] ?? (key.length === 1 ? key.toUpperCase() : titleCase(key)))
-    .join(" + ");
-}
-
-/** "f9" → "F9", "home" → "Home". */
-const titleCase = (key: string) =>
-  /^f\d+$/.test(key) ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1);

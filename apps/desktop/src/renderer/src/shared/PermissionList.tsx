@@ -3,9 +3,12 @@ import { usePermissions } from "./hooks";
 
 const LABELS: Record<PermissionKind, { title: string; why: string }> = {
   microphone: { title: "Microphone", why: "To hear what you say." },
+  accessibility: { title: "Accessibility", why: "To type the text into the app you are using." },
+  input_monitoring: { title: "Input Monitoring", why: "To notice when you hold the hotkey." },
+  screen_recording: { title: "Screen Recording", why: "To understand what is on your screen." },
 };
 
-/** The permissions the app needs, updating live as the user grants them. */
+/** The permissions this OS needs, updating live as the user grants them. */
 export function PermissionList() {
   const statuses = usePermissions() ?? [];
 
@@ -30,7 +33,7 @@ export function PermissionList() {
           {(state === "denied" || state === "not_asked") && (
             <button
               type="button"
-              className="shrink-0 rounded-[3px] bg-marigold px-3.5 py-1.5 font-semibold text-on-marigold transition-colors hover:bg-ink hover:text-page"
+              className="shrink-0 rounded-[3px] bg-accent px-3.5 py-1.5 font-semibold text-on-accent transition-colors hover:bg-ink hover:text-page"
               onClick={() =>
                 state === "not_asked"
                   ? window.subx.permissions.request(kind)

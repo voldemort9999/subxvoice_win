@@ -1,20 +1,25 @@
 // The contract between the UI (renderer) and the main process. Main, preload and renderer
 // all import from here, so channel names and types can't drift apart.
 import type {
+  AssistantEvent,
   DictionaryEntry,
   HotkeyBinding,
+  MicDevice,
   PermissionKind,
   PermissionState,
-  ScriptPreference,
   SessionRecord,
-  WritingTone,
+  UserReply,
 } from "@subx/core";
+import type { PillPlace } from "./pill-place";
 
 export const IPC = {
   appInfo: "app:info",
   authState: "auth:state",
-  authSignIn: "auth:sign-in",
-  authSignUp: "auth:sign-up",
+  authStartEmail: "auth:start-email",
+  authVerifyCode: "auth:verify-code",
+  authResendEmailCode: "auth:resend-email-code",
+  authDeleteAccount: "auth:delete-account",
+  authGoogle: "auth:google",
   authSignOut: "auth:sign-out",
   authSetProfile: "auth:set-profile",
   authUsage: "auth:usage",
@@ -24,8 +29,14 @@ export const IPC = {
   permissionRequest: "permissions:request",
   permissionOpenSettings: "permissions:open-settings",
   historyList: "history:list",
+  statsDays: "stats:days",
   historyAudio: "history:audio",
   historyRemove: "history:remove",
+  historyClear: "history:clear",
+  dictionaryLearning: "dictionary:learning",
+  dictionaryAcceptPending: "dictionary:accept-pending",
+  dictionaryDropPending: "dictionary:drop-pending",
+  dictionaryAllowAgain: "dictionary:allow-again",
   historyChanged: "history:changed",
   dictionaryList: "dictionary:list",
   dictionaryUpsert: "dictionary:upsert",
@@ -33,8 +44,18 @@ export const IPC = {
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   settingsChanged: "settings:changed",
+  hotkeyRecord: "hotkey:record",
+  hotkeyRecordCancel: "hotkey:record-cancel",
+  hotkeyHeld: "hotkey:held",
+  navigate: "app:navigate",
   microphoneList: "settings:microphones",
   microphonePublish: "settings:microphones-publish",
+  micDevices: "mic:devices",
+  micMeter: "mic:meter",
+  micMeterLevel: "mic:meter-level",
+  voiceSettingsGet: "voice-settings:get",
+  voiceSettingsSet: "voice-settings:set",
+  voiceLanguages: "voice-settings:languages",
   updateState: "update:state",
   updateCheck: "update:check",
   updateInstall: "update:install",
@@ -44,8 +65,16 @@ export const IPC = {
   pillLevel: "pill:level",
   micCommand: "mic:command",
   // pill → main
+  /** Follow My Words' assistant, event by event, for the capsule card above the pill (plan T15). */
+  assistantEvent: "assistant:event",
+  /** The capsule's answer: a choice, an Allow / Don't, a typed reply. */
+  assistantReply: "assistant:reply",
   pillHover: "pill:hover",
-  pillClick: "pill:click",
+  pillPress: "pill:press",
+  pillRelease: "pill:release",
+  pillHoverReset: "pill:hover-reset",
+  pillArea: "pill:area",
+  pillDemo: "pill:demo",
   micChunk: "mic:chunk",
   micStopped: "mic:stopped",
   micError: "mic:error",
@@ -54,28 +83,97 @@ export const IPC = {
 export interface AppInfo {
   version: string;
   hotkeys: HotkeyBinding[];
-  /** Hotkeys worth suggesting; any combination of two or more keys can be recorded. */
+  /** Hotkeys worth suggesting. On macOS this is also the limit; see `customHotkeys`. */
   supportedKeys: string[];
-  /** Which engines are configured. Settings shows a warning when one is missing. */
-  providers: { stt: boolean; llm: boolean };
+  /** True when any key combination can be recorded, rather than only `supportedKeys`. */
+  customHotkeys: boolean;
+  /**
+   * True when the OS plug records natively (Mac). That path uses the system input device, so the
+   * in-app microphone picker only applies when this is false.
+   */
+  nativeMicrophone: boolean;
+  /** The microphone can be cleaned by the OS's voice processing (the setting is shown only then). */
+  voiceCleanup: boolean;
+  /** When this run of the app started (ms). The launch scene plays once per run, not per window. */
+  startedAt: number;
 }
 
-/** User settings. */
+/** The pill's look (Settings → Appearance). Classic is the default. */
+export type PillStyle = "classic" | "line";
+
+/** A fix seen once, waiting for the same fix again before its word is learned. */
+export interface PendingFix {
+  key: string;
+  word: string;
+  heardAs: string;
+  app?: string;
+  at: number;
+  count: number;
+}
+
+/** One day's dictation, by the Mac's calendar ("2026-11-20"): counts only, never text. */
+export interface DayTotal {
+  words: number;
+  speakingMs: number;
+  dictations: number;
+}
+
+export type HistoryKeep = "forever" | "1d" | "7d" | "30d";
+
+/** How long each choice keeps a dictation, in ms. */
+export const HISTORY_KEEP_MS: Record<Exclude<HistoryKeep, "forever">, number> = {
+  "1d": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+/** User settings. Identical on both OSes; only the allowed hotkey values differ. */
 export interface AppSettings {
   /** One of `AppInfo.supportedKeys`. */
   hotkey: string;
-  /** Held to give a command instead of dictating. Ignored when it is the same as `hotkey`. */
-  commandHotkey: string;
-  script: ScriptPreference;
   /** MediaDevices id, or "" for the system default. */
   microphoneId: string;
+  /** Clean the microphone the way calls do, so background noise and voices are left out. */
+  voiceCleanup: boolean;
   /** Start SUBXVoice when the user signs in to the computer. */
   launchAtLogin: boolean;
-  /** How a composed email reads. Chosen during setup, changeable in Settings. */
-  emailTone: WritingTone;
-  /** How a composed chat message reads. Separate from email: most people write formal mail and
-   * casual chat. */
-  messageTone: WritingTone;
+  /** A short sound when the microphone opens and when it closes. */
+  sounds: boolean;
+  /** Mute the Mac's output (music, videos) while dictating. */
+  muteAudio: boolean;
+  /** Keep the small pill on screen between dictations; off, it appears only while dictating. */
+  pillWhenIdle: boolean;
+  /** How long dictations and their recordings are kept on this Mac; older ones are deleted. */
+  keepHistory: HistoryKeep;
+  pillStyle: PillStyle;
+  /** The words heard so far, in the pill while speaking. */
+  pillLiveText: boolean;
+  /** Where on the screen the pill sits: a corner or the middle of an edge. */
+  pillPosition: PillPlace;
+  /** Add a word to the dictionary when the user corrects it after a paste. */
+  learnWords: boolean;
+}
+
+/**
+ * How the account's dictation is heard and written, kept by the backend (`/v1/settings`) so it is
+ * the same on every device. Only the part this app edits is typed; the rest passes through.
+ */
+export interface VoiceLanguages {
+  /** "auto", or the languages to write as spoken, first one primary: any other is written in it. */
+  spoken: "auto" | string[];
+  /** Hindi written in English letters. */
+  hinglish: boolean;
+  /** Everything written in this language, whatever was spoken; null = as above. */
+  writeIn: string | null;
+}
+
+/** How the words read (the server's styles), chosen per kind of app. */
+export type WritingStyle = "formal" | "casual" | "very_casual";
+export type StyleCategory = "personal" | "work" | "email" | "other";
+
+export interface VoiceSettings {
+  languages: VoiceLanguages;
+  styles?: Record<StyleCategory, WritingStyle>;
 }
 
 /** Dictation time used today, and what is left of the daily allowance. */
@@ -87,14 +185,28 @@ export interface Usage {
 
 /** Who is signed in. The app needs an account before it can dictate. */
 export interface AccountState {
-  /** The Supabase user id, used to keep each account's data apart on disk. */
+  /** The account's id, used to keep each account's data apart on disk. */
   id: string | null;
   email: string | null;
   signedIn: boolean;
   /** What the user asked to be called. Empty until they finish setting up. */
   name: string;
-  /** False until the name and hotkey have been chosen once. */
+  /** False until the name has been chosen once. */
   onboarded: boolean;
+  /** A name to offer in setup (the first name Google gave), or "". */
+  suggestedName: string;
+  /** The Google profile photo as a data: URL, or "" (the round initial is shown). */
+  photo: string;
+  /** Signed out: the Google account last used here, or null. Kept on sign-out, gone on delete. */
+  lastGoogle: LastGoogleAccount | null;
+}
+
+/** The Google account last signed in on this Mac, offered as "Continue as …" after a sign-out. */
+export interface LastGoogleAccount {
+  email: string;
+  name: string;
+  /** A data: URL, or "" (the round initial is shown). */
+  photo: string;
 }
 
 export interface MicrophoneOption {
@@ -109,14 +221,25 @@ export interface PermissionStatus {
 
 export type PillState =
   | { kind: "idle" }
-  | { kind: "listening" }
-  /** `message` carries the raw transcript while the LLM is still cleaning it up. */
+  /** `text` is what has been heard so far; `locked` is hands-free (the key is no longer held). */
+  | { kind: "listening"; text?: string; locked?: boolean }
+  /** `message` carries the finished words while they are pasted. */
   | { kind: "processing"; message?: string }
   /** `warning` says the words went in, but not in the script that was asked for. */
   | { kind: "done"; message: string; warning?: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  /** Words just learned from the user's own fixes; clicking the pill takes them back out. */
+  | { kind: "learned"; words: string[] }
+  /** No text box had the focus, so nothing was typed; clicking the pill copies `text`. */
+  | { kind: "unplaced"; text: string };
 
 export type MicCommand = "start" | "stop";
+
+/** The main process sending the dashboard somewhere: a page, and for Settings a section of it. */
+export interface Navigation {
+  page: "dashboard" | "insights" | "dictionary" | "settings";
+  tab?: string;
+}
 
 /**
  * Where the app is in the update cycle. `unsupported` covers development, where there is no
@@ -128,15 +251,36 @@ export type UpdateState =
   | { kind: "current"; checkedAt: number }
   | { kind: "downloading"; version: string; percent: number }
   | { kind: "ready"; version: string }
+  /** A newer version exists, and this copy cannot install it itself (no Developer ID yet): download it. */
+  | { kind: "available"; version: string; url: string }
   | { kind: "error"; message: string }
   | { kind: "unsupported"; reason: string };
 
+/** After a sign-in code is emailed: when the next may be asked for. */
+export interface CodeSent {
+  /** Seconds until another code may be sent; 0 means now. */
+  resendIn: number;
+  /** Codes still allowed in the current 10 minutes. */
+  left: number;
+}
+
 /** Exposed to the UI as `window.subx` by the preload script. */
 export interface SubxApi {
+  os: "mac";
   auth: {
     state(): Promise<AccountState>;
-    signIn(email: string, password: string): Promise<void>;
-    signUp(email: string, password: string): Promise<void>;
+    /**
+     * Opens the browser on Google; resolves once the user is back and signed in. `chooseAccount`
+     * makes Google show its account list instead of going on with the account it already has.
+     */
+    signInWithGoogle(options?: { chooseAccount?: boolean }): Promise<void>;
+    /** Emails a code: it creates the account for a new address and signs in to an existing one. */
+    startEmail(email: string): Promise<CodeSent>;
+    /** The emailed code; resolves signed in. */
+    verifyCode(code: string): Promise<void>;
+    resendEmailCode(): Promise<CodeSent>;
+    /** Deletes the account everywhere: on the server, at sign-in and on this Mac. */
+    deleteAccount(): Promise<void>;
     signOut(): Promise<void>;
     setProfile(name: string): Promise<void>;
     usage(): Promise<Usage | null>;
@@ -145,6 +289,19 @@ export interface SubxApi {
   app: {
     info(): Promise<AppInfo>;
     openRecordingsFolder(): Promise<void>;
+    /** The menu bar asking the dashboard to show a page. */
+    onNavigate(listener: (to: Navigation) => void): () => void;
+  };
+  hotkey: {
+    /**
+     * Records the dictation hotkey from the keys held (main process, the same poll that watches
+     * them). `keys`: recorded and accepted, not yet saved; `refused`: why it cannot be the hotkey;
+     * null: cancelled, or this OS records in the page.
+     */
+    record(): Promise<{ keys: string } | { refused: string } | null>;
+    cancelRecord(): void;
+    /** The keys held so far, while recording. */
+    onHeld(listener: (keys: string) => void): () => void;
   };
   update: {
     state(): Promise<UpdateState>;
@@ -164,12 +321,30 @@ export interface SubxApi {
     /** WAV bytes of a recording. */
     audio(id: string): Promise<Uint8Array>;
     remove(id: string): Promise<void>;
+    /** Every dictation and its recording, gone from this Mac. */
+    clear(): Promise<void>;
     onChanged(listener: () => void): () => void;
+  };
+  /** Words, speaking time and dictations per day; kept when history is deleted. */
+  stats: {
+    days(): Promise<Record<string, DayTotal>>;
   };
   dictionary: {
     list(): Promise<DictionaryEntry[]>;
     upsert(entry: DictionaryEntry): Promise<void>;
     remove(word: string): Promise<void>;
+    /** Fixes seen once and waiting for a second, and the words that are not learned again. */
+    learning(): Promise<{ pending: PendingFix[]; removed: string[] }>;
+    acceptPending(key: string): Promise<void>;
+    dropPending(key: string): Promise<void>;
+    allowAgain(word: string): Promise<void>;
+  };
+  /** The account's dictation settings, on the backend. Null when no backend is configured. */
+  voice: {
+    settings(): Promise<VoiceSettings | null>;
+    update(patch: Partial<VoiceSettings>): Promise<VoiceSettings>;
+    /** ISO codes the recogniser can hear and translate between. */
+    languages(): Promise<string[]>;
   };
   settings: {
     get(): Promise<AppSettings>;
@@ -179,14 +354,36 @@ export interface SubxApi {
     publishMicrophones(options: MicrophoneOption[]): void;
     microphones(): Promise<MicrophoneOption[]>;
   };
+  /** The Mac's own microphones (native capture), for the picker. */
+  mic: {
+    devices(): Promise<MicDevice[]>;
+    /** A live level for the picker; the microphone is on only while this is. */
+    meter(on: boolean): void;
+    onLevel(listener: (level: number) => void): () => void;
+  };
   /** Used only by the recording pill window. The mic commands are for the Web Audio fallback. */
   pill: {
     onState(listener: (state: PillState) => void): () => void;
     /** Loudness 0–1 while listening, for the waveform. */
     onLevel(listener: (level: number) => void): () => void;
     onMicCommand(listener: (command: MicCommand) => void): () => void;
+    /** Follow My Words' run, for the capsule card above the pill. */
+    onAssistant(listener: (event: AssistantEvent) => void): () => void;
+    /** The capsule's answer to a question or an approval. */
+    reply(reply: UserReply): void;
     hover(inside: boolean): void;
-    click(): void;
+    /**
+     * Mouse down and up on the pill. The main process tells a click from a drag by where the mouse
+     * really went: a click opens the app (or is the pill's Undo or Copy), a drag moves the pill.
+     */
+    press(): void;
+    release(): void;
+    /** The pill's drawn size, so its clicks can be caught exactly there. */
+    area(size: { width: number; height: number }): void;
+    /** The pill moved out from under the pointer, so it is no longer hovered. */
+    onHoverReset(listener: () => void): () => void;
+    /** Shows a made-up state on the real pill for a few seconds (Settings' "show on screen"). */
+    demo(state: PillState): void;
     /** 16 kHz mono PCM. */
     sendChunk(samples: Int16Array): void;
     /** All audio has been sent after a "stop". */

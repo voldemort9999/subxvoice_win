@@ -6,10 +6,12 @@ import {
   byApp,
   byDay,
   byHour,
-  latency,
+  cleanup,
   longest,
   median,
-  pipelineMix,
+  personalBests,
+  rhythm,
+  scripts,
   speakingMs,
   timeSavedMs,
   totalWords,
@@ -77,31 +79,6 @@ describe("median", () => {
   });
 });
 
-describe("latency", () => {
-  it("reports the typical wait, not one bad run", () => {
-    const timings = (sttMs: number, llmMs: number, totalMs: number) => ({
-      sttMs,
-      rulesMs: 0,
-      llmMs,
-      insertMs: 10,
-      totalMs,
-    });
-    const result = latency([
-      record({ timings: timings(50, 800, 900) }),
-      record({ timings: timings(60, 900, 1000) }),
-      // One cold outlier that a mean would let distort the figure.
-      record({ timings: timings(3000, 9000, 12_000) }),
-    ]);
-    expect(result.total).toBe(1000);
-    expect(result.stt).toBe(60);
-    expect(result.samples).toBe(3);
-  });
-
-  it("ignores records that never completed", () => {
-    expect(latency([record()]).samples).toBe(0);
-  });
-});
-
 describe("grouping for the charts", () => {
   it("keeps empty days so the chart does not lie about rhythm", () => {
     const now = Date.now();
@@ -121,7 +98,7 @@ describe("grouping for the charts", () => {
       record({ context: { appName: "Code" }, finalText: "a b" }),
       record({ context: { appName: "Code" }, finalText: "c" }),
       record({ context: { appName: "chrome" }, finalText: "d" }),
-      // No app name: some windows give none, and an "Unknown" bar would look like a bug.
+      // No app name: macOS cannot read one yet, and an "Unknown" bar would look like a bug.
       record({ finalText: "e" }),
     ]);
     expect(apps.map((app) => app.name)).toEqual(["Code", "chrome"]);
@@ -139,17 +116,44 @@ describe("grouping for the charts", () => {
   });
 });
 
-describe("what the pipeline did", () => {
-  it("separates the speech the LLM rewrote from the speech it left alone", () => {
-    const mix = pipelineMix([
-      record({ rawText: "मेरा नाम", finalText: "mera naam" }),
+describe("what SUBXVoice did for the user", () => {
+  it("counts rewrites and the words they took out", () => {
+    const result = cleanup([
+      record({ rawText: "um so I I think yes", finalText: "I think yes" }),
       record({ rawText: "already fine", finalText: "already fine" }),
       record({ rawText: "", finalText: "" }),
     ]);
-    expect(mix.total).toBe(2);
-    expect(mix.cleaned).toBe(1);
-    expect(mix.devanagari).toBe(1);
-    expect(mix.romanOut).toBe(2);
+    expect(result).toEqual({ spoken: 2, rewritten: 1, trimmed: 3 });
+  });
+
+  it("finds the scripts used and the dictations that mixed them", () => {
+    const result = scripts([
+      record({ finalText: "मुझे पता है, and there are a lot of things to do" }),
+      record({ finalText: "kal milte hain" }),
+      record({ finalText: "君のお母さん" }),
+    ]);
+    expect(result.mixed).toBe(1);
+    expect(result.used.map((script) => script.name)).toEqual(["Latin", "Devanagari", "Japanese"]);
+  });
+
+  it("keeps personal bests honest: no speed from a two-second clip", () => {
+    const today = Date.now();
+    const bests = personalBests([
+      record({ finalText: "one two", audioMs: 500, createdAt: today }),
+      record({ finalText: "one two three four five six", audioMs: 3000, createdAt: today - DAY_MS }),
+      record({ finalText: "a b", audioMs: 4000, createdAt: today - 3 * DAY_MS }),
+    ]);
+    expect(bests.fastest).toBe(120);
+    expect(bests.longestStreak).toBe(2);
+    expect(bests.bestDay?.words).toBe(6);
+  });
+
+  it("names the time of day the user talks most, once there is enough", () => {
+    const hours = Array.from({ length: 24 }, () => 0);
+    hours[23] = 4;
+    expect(rhythm(hours)).toBeNull();
+    hours[23] = 6;
+    expect(rhythm(hours)?.label).toBe("Night owl");
   });
 });
 

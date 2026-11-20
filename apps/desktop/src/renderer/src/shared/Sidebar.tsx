@@ -1,11 +1,12 @@
+import { SidebarTop } from "@platform/Chrome";
 import type { ComponentType } from "react";
-import type { Usage } from "../../../shared/ipc";
-import { SidebarTop } from "./Chrome";
+import type { AccountState, Usage } from "../../../shared/ipc";
 import { formatSpan } from "./format";
-import { BookIcon, ChartIcon, HistoryIcon, HomeIcon, SettingsIcon } from "./icons";
+import { BookIcon, ChartIcon, GearIcon, HomeIcon } from "./icons";
 import { Mark } from "./Mark";
+import { ProfileMenu } from "./ProfileMenu";
 
-export type PageId = "dashboard" | "insights" | "history" | "dictionary" | "settings";
+export type PageId = "dashboard" | "insights" | "dictionary" | "settings";
 
 interface NavItem {
   id: PageId;
@@ -14,128 +15,103 @@ interface NavItem {
 }
 
 /**
- * Grouped by what the user is trying to do, not by how the app is built: look at what happened,
- * then change how it behaves.
+ * The pages, straight under the name with no group headings: a few short names read at a glance,
+ * and headings over two items each only added words. Settings is not here; it is the gear beside
+ * the account at the bottom, where most Mac apps keep it.
  */
-const GROUPS: { heading: string; items: NavItem[] }[] = [
-  {
-    heading: "Your voice",
-    items: [
-      { id: "dashboard", label: "Dashboard", icon: HomeIcon },
-      { id: "insights", label: "Insights", icon: ChartIcon },
-      { id: "history", label: "History", icon: HistoryIcon },
-    ],
-  },
-  {
-    heading: "Tuning",
-    items: [
-      { id: "dictionary", label: "Dictionary", icon: BookIcon },
-      { id: "settings", label: "Settings", icon: SettingsIcon },
-    ],
-  },
+const PAGES: NavItem[] = [
+  { id: "dashboard", label: "Home", icon: HomeIcon },
+  { id: "dictionary", label: "Dictionary", icon: BookIcon },
+  { id: "insights", label: "Insights", icon: ChartIcon },
 ];
 
 export function Sidebar({
   page,
   onNavigate,
-  hotkey,
-  followKey,
-  ready,
+  account,
   usage,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
-  hotkey: string;
-  /** The Follow My Words key; absent where it cannot run. */
-  followKey?: string;
-  ready: boolean;
+  account: AccountState;
   usage: Usage | null;
 }) {
-  const exhausted = usage ? usage.remaining <= 0 : false;
   return (
-    // The one surface that inverts. On Aubergine, Marigold is legible as type, so the current page
-    // can be marked in the accent itself — nowhere in the content area can.
-    <nav className="flex w-[216px] shrink-0 flex-col bg-side text-side-ink">
+    <nav className="relative flex w-[232px] shrink-0 flex-col bg-side text-side-ink">
       <SidebarTop />
 
-      <div className="flex items-center gap-2.5 px-5 pt-1 pb-7">
-        <Mark className="h-8 w-8" />
-        <span className="font-display text-[17px] font-extrabold tracking-tight">SUBXVoice</span>
+      <div className="flex items-center gap-2.5 px-5 pt-0.5 pb-5">
+        <Mark className="h-7 w-7" />
+        <span className="font-display text-[18px] [font-weight:var(--display-weight)] tracking-tight">
+          SUBXVoice
+        </span>
       </div>
 
-      <div className="flex-1 space-y-6 px-3">
-        {GROUPS.map((group) => (
-          <div key={group.heading}>
-            <p className="px-3 pb-2 text-xs text-side-soft">{group.heading}</p>
-            <ul className="space-y-px">
-              {group.items.map(({ id, label, icon: PageIcon }) => {
-                const active = id === page;
-                return (
-                  <li key={id}>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate(id)}
-                      aria-current={active ? "page" : undefined}
-                      className={`relative flex w-full items-center gap-3 rounded-[3px] px-3 py-[7px] text-left transition-colors ${
-                        active
-                          ? "bg-side-rule font-semibold text-marigold"
-                          : "text-side-soft hover:bg-side-rule/60 hover:text-side-ink"
-                      }`}
-                    >
-                      {active && (
-                        <span
-                          className="absolute inset-y-1.5 left-0 w-[3px] bg-marigold"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <PageIcon className="h-4 w-4" />
-                      {label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </div>
+      <ul className="m-0 flex-1 list-none space-y-1 px-3">
+        {PAGES.map(({ id, label, icon: PageIcon }) => {
+          const active = id === page;
+          return (
+            <li key={id}>
+              <button
+                type="button"
+                onClick={() => onNavigate(id)}
+                aria-current={active ? "page" : undefined}
+                className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-[15px] transition-colors ${
+                  active
+                    ? "bg-side-rule font-medium text-side-ink shadow-[var(--side-inset)]"
+                    : "text-side-soft hover:bg-side-rule/60 hover:text-side-ink"
+                }`}
+              >
+                <PageIcon className="h-[17px] w-[17px]" />
+                {label}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
 
-      {/* The one thing a new user needs to know, kept in view on every screen. */}
-      <div className="mx-5 mb-5 border-t border-side-rule pt-4">
-        <p className="flex items-center gap-2 font-semibold">
-          <span
-            className={`h-2 w-2 rounded-full ${ready && !exhausted ? "bg-marigold" : "border border-side-soft"}`}
-            aria-hidden="true"
-          />
-          {exhausted ? "Daily limit reached" : ready ? "Ready" : "Setup needed"}
-        </p>
-        {exhausted ? (
-          <p className="mt-2 text-side-soft">Back tomorrow.</p>
-        ) : ready ? (
-          <>
-            {followKey && (
-              <p className="mt-2.5 flex items-center gap-2 text-side-soft">
-                <kbd className="kbd border-side-rule bg-side-rule text-side-ink">{followKey}</kbd>
-                to ask
-              </p>
-            )}
-            <p className="mt-2 flex items-center gap-2 text-side-soft">
-              <kbd className="kbd border-side-rule bg-side-rule text-side-ink">{hotkey}</kbd>
-              to type
-            </p>
-            {usage && (
-              <p className="mt-2 text-xs text-side-soft">{formatSpan(usage.remaining * 1000)} left today</p>
-            )}
-          </>
-        ) : (
+      <div className="space-y-3 px-3 pb-3">
+        <PlanCard usage={usage} />
+        <div className="flex items-center gap-1 border-t border-side-rule pt-3">
+          <ProfileMenu account={account} />
           <button
             type="button"
             onClick={() => onNavigate("settings")}
-            className="mt-2 font-semibold text-marigold underline underline-offset-[3px]"
+            aria-label="Settings"
+            aria-current={page === "settings" ? "page" : undefined}
+            title="Settings"
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors ${
+              page === "settings"
+                ? "bg-side-rule text-side-ink"
+                : "text-side-soft hover:bg-side-rule/60 hover:text-side-ink"
+            }`}
           >
-            Finish setup
+            <GearIcon className="h-[19px] w-[19px]" />
           </button>
-        )}
+        </div>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Today's speaking time and what is left of it, as a meter. No plan name and no upgrade button
+ * until there is billing behind them: a button that does nothing is worse than none.
+ */
+function PlanCard({ usage }: { usage: Usage | null }) {
+  if (!usage || usage.limit <= 0) return null;
+  const left = Math.max(0, Math.min(1, usage.remaining / usage.limit));
+  return (
+    <div className="px-1.5">
+      <div className="flex items-baseline justify-between text-[13px]">
+        <span className="text-side-soft">Today</span>
+        <span className="figure-num font-medium">
+          {usage.remaining > 0 ? `${formatSpan(usage.remaining * 1000)} left` : "Back tomorrow"}
+        </span>
+      </div>
+      <span className="mt-2 block h-1 overflow-hidden rounded-full bg-side-rule" aria-hidden="true">
+        <span className="block h-full rounded-full bg-side-accent" style={{ width: `${left * 100}%` }} />
+      </span>
+    </div>
   );
 }

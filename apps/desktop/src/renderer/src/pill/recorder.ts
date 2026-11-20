@@ -1,3 +1,4 @@
+import { micConstraints } from "./mic-constraints";
 import workletUrl from "./pcm-worklet?worker&url";
 
 // Opening the mic takes ~300 ms in Chromium, which would cut off the first word. So the mic stays
@@ -5,18 +6,6 @@ import workletUrl from "./pcm-worklet?worker&url";
 // as pre-roll. The OS mic indicator is on while the mic is warm.
 const WARM_MS = 60_000;
 const PRE_ROLL_CHUNKS = 6; // 6 × 50 ms = 300 ms before the key press
-
-const AUDIO: MediaTrackConstraints = {
-  channelCount: 1,
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
-};
-
-/** Falls back to the system default if the chosen device has been unplugged. */
-const constraints = (deviceId: string): MediaStreamConstraints => ({
-  audio: deviceId ? { ...AUDIO, deviceId: { ideal: deviceId } } : AUDIO,
-});
 
 type WorkletMessage = { type: "chunk"; samples: Int16Array; level: number } | { type: "flushed" };
 
@@ -32,12 +21,14 @@ export class MicRecorder {
   private recording = false;
   private preRoll: Int16Array[] = [];
   private deviceId = "";
+  private cleanup = true;
 
   constructor() {
-    const apply = (settings: { microphoneId: string }) => {
-      if (settings.microphoneId === this.deviceId) return;
+    const apply = (settings: { microphoneId: string; voiceCleanup: boolean }) => {
+      if (settings.microphoneId === this.deviceId && settings.voiceCleanup === this.cleanup) return;
       this.deviceId = settings.microphoneId;
-      // Drop the warm mic so the next dictation opens the newly chosen device.
+      this.cleanup = settings.voiceCleanup;
+      // Drop the warm mic so the next dictation opens the newly chosen device or processing.
       if (!this.recording) this.closeMic();
     };
     void window.subx.settings.get().then(apply);
@@ -91,7 +82,7 @@ export class MicRecorder {
   private openMic(): Promise<AudioWorkletNode> {
     this.mic ??= (async () => {
       const [stream, context] = await Promise.all([
-        navigator.mediaDevices.getUserMedia(constraints(this.deviceId)),
+        navigator.mediaDevices.getUserMedia(micConstraints(this.deviceId, this.cleanup)),
         this.audioContext(),
       ]);
       await context.resume();

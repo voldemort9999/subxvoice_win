@@ -37,11 +37,9 @@ export function AudioButton({ id }: { id: string }) {
       type="button"
       onClick={toggle}
       aria-label={playing ? "Pause recording" : "Play recording"}
-      // Fills with Marigold while it plays: the one control on the row that is doing something.
+      // Fills with ultramarine while it plays: the one control on the row that is doing something.
       className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors ${
-        playing
-          ? "border-marigold bg-marigold text-on-marigold"
-          : "border-rule-strong text-ink hover:border-ink"
+        playing ? "border-accent bg-accent text-on-accent" : "border-rule-strong text-ink hover:border-ink"
       }`}
     >
       {playing ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="ml-0.5 h-3.5 w-3.5" />}

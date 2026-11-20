@@ -1,19 +1,22 @@
-import type { WritingTone } from "@subx/core";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { AppInfo } from "../../../shared/ipc";
+import { hotkeyLabel } from "../../../shared/hotkey-label";
+import type { AppInfo, WritingStyle } from "../../../shared/ipc";
 import { AuthShell } from "../shared/AuthShell";
-import { followKey } from "../shared/follow";
-import { hotkeyLabel } from "../shared/format";
+import { errorText } from "../shared/errors";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
-import { useSettings } from "../shared/hooks";
-import { TONE_OPTIONS } from "../shared/tones";
-import { Button, FIELD, Notice } from "../shared/ui";
+import { usePermissions, useSettings, useVoiceSettings } from "../shared/hooks";
+import { shownHotkey } from "../shared/hotkeys";
+import { PermissionList } from "../shared/PermissionList";
+import { DEFAULT_STYLES, STYLE_OPTIONS } from "../shared/tones";
+import { Button, FIELD, Notice, Select } from "../shared/ui";
+import { Working } from "../shared/Working";
 
-type Step = "name" | "hotkey" | "tone";
+type Step = "name" | "access" | "hotkey" | "tone";
 
 /** Numbered because it is a sequence: each step is done before the next one is shown. */
 const STEPS: { id: Step; title: string }[] = [
   { id: "name", title: "Your name" },
+  { id: "access", title: "Allow access" },
   { id: "hotkey", title: "Your keys" },
   { id: "tone", title: "How it writes" },
 ];
@@ -23,12 +26,23 @@ const STEPS: { id: Step; title: string }[] = [
  * and how anything written for them should read. All three have working defaults, so this is
  * three confirmations rather than a form to fill in.
  */
-export function OnboardingPage({ info, email }: { info: AppInfo | null; email: string | null }) {
+export function OnboardingPage({
+  info,
+  email,
+  suggestedName,
+}: {
+  info: AppInfo | null;
+  email: string | null;
+  /** Google's first name for the user, so they only have to confirm it. */
+  suggestedName: string;
+}) {
   const [step, setStep] = useState<Step>("name");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(suggestedName);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [settings, update] = useSettings();
+  const voice = useVoiceSettings();
+  const styles = voice.settings?.styles ?? DEFAULT_STYLES;
   const nameField = useRef<HTMLInputElement>(null);
 
   // The name field is the only thing on this step, so it takes focus.
@@ -36,10 +50,7 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
     if (step === "name") nameField.current?.focus();
   }, [step]);
 
-  const hotkey = settings?.hotkey ?? info?.hotkeys[0]?.keys ?? "ctrl+win";
-  // Follow My Words comes first when it can run; without its engines this is the dictation key alone.
-  const follows = Boolean(followKey(info) || settings?.commandHotkey);
-  const askKey = settings?.commandHotkey || followKey(info) || "ctrl+alt";
+  const hotkey = shownHotkey(settings?.hotkey, info) ?? "ctrl+win";
   const current = STEPS.findIndex((item) => item.id === step);
 
   function next(event: FormEvent) {
@@ -49,7 +60,7 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
       return;
     }
     setProblem(null);
-    setStep("hotkey");
+    setStep("access");
   }
 
   async function finish() {
@@ -58,7 +69,7 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
       await window.subx.auth.setProfile(name.trim());
       // The window swaps itself out once the account reports itself set up.
     } catch (error) {
-      setProblem(error instanceof Error ? error.message : String(error));
+      setProblem(errorText(error));
       setBusy(false);
     }
   }
@@ -75,12 +86,16 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
             >
               <span
                 className={`figure w-6 text-[30px] ${
-                  index === current ? "text-marigold" : index < current ? "text-side-ink" : "text-side-soft"
+                  index === current
+                    ? "text-stage-accent"
+                    : index < current
+                      ? "text-stage-ink"
+                      : "text-stage-ink/60"
                 }`}
               >
                 {index + 1}
               </span>
-              <span className={index === current ? "font-semibold" : "text-side-soft"}>{item.title}</span>
+              <span className={index === current ? "font-semibold" : "text-stage-ink/60"}>{item.title}</span>
             </li>
           ))}
         </ol>
@@ -92,7 +107,15 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
           <form onSubmit={next}>
             <h1 className="text-[28px]">What should we call you?</h1>
             <p className="mt-2 mb-7 text-ink-soft">
-              Signed in as <span className="font-medium text-ink">{email}</span>.
+              Signed in as <span className="font-medium text-ink">{email}</span>.{" "}
+              {/* The way back out of setup, for the wrong account or a sign-in that needs redoing. */}
+              <button
+                type="button"
+                onClick={() => void window.subx.auth.signOut()}
+                className="font-medium text-ink underline decoration-accent decoration-2 underline-offset-[3px]"
+              >
+                Use another account
+              </button>
             </p>
 
             <label className="block space-y-1.5">
@@ -102,7 +125,7 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 ref={nameField}
-                placeholder="Bhavesh"
+                placeholder="Your name"
                 maxLength={60}
               />
             </label>
@@ -119,37 +142,27 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
           </form>
         ) : step === "hotkey" ? (
           <div>
-            <h1 className="text-[28px]">{follows ? "Your two keys" : "Pick your dictation key"}</h1>
+            <h1 className="text-[28px]">Pick your dictation key</h1>
             <p className="mt-2 mb-7 text-ink-soft">
-              {follows
-                ? "Hold one to ask, the other to type. Let go to stop. Change either later in Settings."
-                : "Hold it anywhere to talk, let go to stop. You can change it later in Settings."}
+              Hold it anywhere to talk, let go to stop. You can change it later in Settings.
             </p>
-
-            {follows && info && (
-              <div className="mb-7">
-                <p className="font-semibold">Follow My Words</p>
-                <p className="mt-1 mb-3 text-ink-soft">
-                  Hold it while you work and say what you need done — “Pictures wale folder mein mera resume
-                  dhoondo”, “WhatsApp pe Aryan ko likho aaj main nahi aa paunga”.
-                </p>
-                <HotkeyRecorder
-                  value={askKey}
-                  presets={[...new Set(["ctrl+alt", ...info.supportedKeys])]}
-                  onChange={(keys) => update({ commandHotkey: keys })}
-                />
-              </div>
+            {info?.customHotkeys ? (
+              <HotkeyRecorder
+                value={hotkey}
+                presets={info.supportedKeys}
+                onChange={(keys) => update({ hotkey: keys })}
+              />
+            ) : (
+              <Select
+                label="Hotkey"
+                value={hotkey}
+                onChange={(value) => update({ hotkey: value })}
+                options={(info?.supportedKeys ?? []).map((keys) => ({
+                  value: keys,
+                  label: hotkeyLabel(keys),
+                }))}
+              />
             )}
-
-            {follows && <p className="font-semibold">Dictation</p>}
-            {follows && (
-              <p className="mt-1 mb-3 text-ink-soft">Hold it to type by voice, wherever your cursor is.</p>
-            )}
-            <HotkeyRecorder
-              value={hotkey}
-              presets={info?.supportedKeys ?? []}
-              onChange={(keys) => update({ hotkey: keys })}
-            />
 
             {problem && (
               <div className="mt-3">
@@ -160,27 +173,29 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
             <Button variant="primary" onClick={() => setStep("tone")} className="mt-7 w-full py-2.5">
               Continue
             </Button>
-            <BackButton onClick={() => setStep("name")} />
+            <BackButton onClick={() => setStep("access")} />
           </div>
+        ) : step === "access" ? (
+          <AccessStep onDone={() => setStep("hotkey")} onBack={() => setStep("name")} />
         ) : (
           <div>
             <h1 className="text-[28px]">How should we write for you?</h1>
             <p className="mt-2 mb-6 leading-relaxed text-ink-soft">
-              On the dictation key, ask for an email or a message out loud — “write a mail to my manager about
-              tomorrow's leave” — and SUBXVoice writes it instead of typing what you said. This is the voice
-              it uses. Change it any time in Settings.
+              SUBXVoice turns what you say into clean writing. Choose how it should sound in email and in
+              messages. Each kind of app can be set on its own later, in Settings → Writing style.
             </p>
 
             <ToneChoice
               title="Email"
-              value={settings?.emailTone ?? "professional"}
-              onChange={(emailTone) => update({ emailTone })}
+              value={styles.email}
+              onChange={(email) => void voice.update({ styles: { ...styles, email } })}
             />
             <div className="mt-6">
               <ToneChoice
                 title="Messages"
-                value={settings?.messageTone ?? "casual"}
-                onChange={(messageTone) => update({ messageTone })}
+                value={styles.personal}
+                // One choice for both kinds of chat here; Settings tells them apart.
+                onChange={(chat) => void voice.update({ styles: { ...styles, personal: chat, work: chat } })}
               />
             </div>
 
@@ -190,8 +205,8 @@ export function OnboardingPage({ info, email }: { info: AppInfo | null; email: s
               </div>
             )}
 
-            <Button variant="primary" onClick={finish} disabled={busy} className="mt-7 w-full py-2.5">
-              {busy ? "One moment…" : `Start with ${hotkeyLabel(follows ? askKey : hotkey)}`}
+            <Button variant="primary" onClick={finish} busy={busy} className="mt-7 w-full py-2.5">
+              {busy ? <Working label="Getting ready…" onAccent /> : `Start with ${hotkeyLabel(hotkey)}`}
             </Button>
             <BackButton onClick={() => setStep("hotkey")} />
           </div>
@@ -214,8 +229,8 @@ function BackButton({ onClick }: { onClick: () => void }) {
 }
 
 /**
- * Three tones as a list rather than a dropdown: the example line is the whole point. The chosen
- * one sits on a Marigold edge — the same mark the typed text gets on the dashboard.
+ * Three styles as a list rather than a dropdown: the example line is the whole point. The chosen
+ * one sits on a ultramarine edge — the same mark the typed text gets on the dashboard.
  */
 function ToneChoice({
   title,
@@ -223,14 +238,14 @@ function ToneChoice({
   onChange,
 }: {
   title: string;
-  value: WritingTone;
-  onChange: (tone: WritingTone) => void;
+  value: WritingStyle;
+  onChange: (style: WritingStyle) => void;
 }) {
   return (
     <fieldset className="m-0 border-0 p-0">
       <legend className="mb-2 p-0 font-semibold">{title}</legend>
       <div className="divide-y divide-rule border-y border-rule">
-        {TONE_OPTIONS.map((tone) => {
+        {STYLE_OPTIONS.map((tone) => {
           const chosen = value === tone.value;
           return (
             <button
@@ -239,7 +254,7 @@ function ToneChoice({
               aria-pressed={chosen}
               onClick={() => onChange(tone.value)}
               className={`block w-full border-l-[3px] px-3 py-2.5 text-left transition-colors ${
-                chosen ? "border-l-marigold bg-paper" : "border-l-transparent hover:bg-well"
+                chosen ? "border-l-accent bg-paper" : "border-l-transparent hover:bg-well"
               }`}
             >
               <span className="font-semibold">{tone.label}</span>
@@ -249,5 +264,69 @@ function ToneChoice({
         })}
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * The three things macOS must allow, asked for together during setup. Asked one at a time, the
+ * first time each was needed, a new Mac could finish setup with none of them: the key did nothing
+ * and nothing said why (2026-11-20). "Allow all" asks for each one that has not been allowed;
+ * macOS shows its own prompts, and the list updates as they are allowed.
+ */
+function AccessStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const statuses = usePermissions();
+  const [asking, setAsking] = useState(false);
+  // "unknown" is a state Electron cannot read (it is shown with a link to check), not a refusal.
+  const missing = (statuses ?? []).filter((item) => item.state === "denied" || item.state === "not_asked");
+  const allAllowed = statuses !== null && missing.length === 0;
+
+  async function allowAll() {
+    setAsking(true);
+    try {
+      for (const { kind, state } of missing) {
+        // A refusal can only be undone in System Settings; open that for the first one, not for all.
+        if (state === "denied" && kind !== "accessibility") {
+          await window.subx.permissions.openSettings(kind);
+          break;
+        }
+        await window.subx.permissions.request(kind);
+      }
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <div>
+      <h1 className="text-[28px]">Allow SUBXVoice to work</h1>
+      <p className="mt-2 mb-5 text-ink-soft">
+        Windows asks once, for the microphone, so SUBXVoice can hear you. Allow it, then come back here.
+      </p>
+      <PermissionList />
+      {allAllowed ? (
+        <Button variant="primary" onClick={onDone} className="mt-7 w-full py-2.5">
+          Continue
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="primary"
+            busy={asking}
+            onClick={() => void allowAll()}
+            className="mt-7 w-full py-2.5"
+          >
+            {asking ? <Working label="Opening Windows Settings…" onAccent /> : "Allow"}
+          </Button>
+          <button
+            type="button"
+            onClick={onDone}
+            className="mt-4 block w-full text-center text-ink-soft underline decoration-rule-strong underline-offset-[3px] hover:text-ink"
+          >
+            Do this later
+          </button>
+        </>
+      )}
+      <BackButton onClick={onBack} />
+    </div>
   );
 }

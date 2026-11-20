@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { JsonSettingsStore } from "./stores";
+import { JsonHistoryStore, JsonSettingsStore } from "./stores";
 
 interface Settings {
   hotkey: string;
@@ -10,7 +10,7 @@ interface Settings {
   microphoneId: string;
 }
 
-const DEFAULTS: Settings = { hotkey: "ctrl+win", script: "roman", microphoneId: "" };
+const DEFAULTS: Settings = { hotkey: "fn", script: "roman", microphoneId: "" };
 
 let dir: string;
 let path: string;
@@ -52,5 +52,57 @@ describe("JsonSettingsStore", () => {
     await store.update({ script: "native" });
     const reopened = new JsonSettingsStore<Settings>(() => path, DEFAULTS);
     expect((await reopened.all()).script).toBe("native");
+  });
+});
+
+describe("JsonHistoryStore.removeWhere", () => {
+  it("takes out only what is picked, keeps it gone on disk, and hands the removed back", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "subx-history-"));
+    const path = join(dir, "history.json");
+    const store = new JsonHistoryStore(() => path);
+    const record = (id: string, createdAt: number) => ({
+      id,
+      createdAt,
+      mode: "exact" as const,
+      context: {},
+      rawText: id,
+      finalText: id,
+      timings: { sttMs: 0, rulesMs: 0, llmMs: 0, insertMs: 0, totalMs: 0 },
+    });
+    await store.save(record("old", 1));
+    await store.save(record("new", Date.now()));
+
+    const removed = await store.removeWhere((item) => item.createdAt < Date.now() - 1000);
+    expect(removed.map((item) => item.id)).toEqual(["old"]);
+    expect((await new JsonHistoryStore(() => path).recent(10)).map((item) => item.id)).toEqual(["new"]);
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// Both accounts start without a history file. The store used to hand both the same empty list, so
+// the first account's dictation showed up in the second, and was saved into its file (2026-11-20).
+describe("JsonHistoryStore across accounts", () => {
+  it("never shows one account's dictations to the next", async () => {
+    const root = await mkdtemp(join(tmpdir(), "subx-accounts-"));
+    try {
+      const { mkdir } = await import("node:fs/promises");
+      await mkdir(join(root, "a"));
+      await mkdir(join(root, "b"));
+      let account = "a";
+      const history = new JsonHistoryStore(() => join(root, account, "history.json"));
+      await history.save({
+        id: "1",
+        createdAt: Date.now(),
+        finalText: "only for a",
+        rawText: "",
+        mode: "exact",
+        context: {},
+      } as never);
+      account = "b";
+      history.forget();
+      expect(await history.recent(10)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

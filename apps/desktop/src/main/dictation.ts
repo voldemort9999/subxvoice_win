@@ -1,11 +1,18 @@
 import type { AudioClip, HotkeyEvent, Mode } from "@subx/core";
 import type { PillState } from "../shared/ipc";
+import { forPeople } from "../shared/plain-words";
 import type { MicSource } from "./mic";
 import type { PillWindow } from "./pill";
 
-const SAMPLE_RATE = 16000;
+export const SAMPLE_RATE = 16000;
 const MIN_HOLD_MS = 250; // a shorter press is an accidental tap
+/** A second press this soon after a tap locks the dictation hands-free. */
+const DOUBLE_TAP_MS = 400;
 const RESULT_VISIBLE_MS = 1500;
+/** Long enough to read "Added … to dictionary" and reach for Undo. */
+const NOTICE_VISIBLE_MS = 5000;
+/** "No text box · Copy": time to notice, move the mouse there and click. */
+const UNPLACED_VISIBLE_MS = 8000;
 /**
  * A run still processing after this is stuck, not slow: the pill once sat on "•••" until the app
  * was restarted, and every later key press was ignored because the state never left "processing".
@@ -23,7 +30,7 @@ export interface DictationRun {
    * Finalise: `clip` is the whole recording, kept for history audio. Returns the pill message and,
    * when the text could not be put in the script the user asked for, the reason.
    */
-  finish(clip: AudioClip): Promise<{ text: string; warning?: string }>;
+  finish(clip: AudioClip): Promise<{ text: string; warning?: string; nowhere?: boolean }>;
   /** Discard without typing anything. */
   cancel(): void;
 }
@@ -33,12 +40,44 @@ export interface DictationEngine {
   open(mode: Mode): Promise<DictationRun>;
 }
 
-/** Turns hotkey events into pill states, streaming audio to the engine as the user speaks. */
+export interface DictationHooks {
+  /**
+   * The microphone is live (true), and then no longer (false): finished, cancelled or failed.
+   * Called exactly once each way per dictation. Sounds, muting and Esc hang off this.
+   */
+  listening?(on: boolean): void;
+  /** A message the user should notice (a learned word, nowhere to type) has just appeared. */
+  alert?(): void;
+}
+
+/**
+ * Turns hotkey events into pill states, streaming audio to the engine as the user speaks.
+ *
+ * Two ways to dictate: hold the key and let go; or tap it twice and talk with hands free, then
+ * press it once more to finish. Esc (or any other key while holding) cancels either.
+ */
 export class DictationController {
   private readonly pill: PillWindow;
   private readonly mic: MicSource;
   private readonly engine: DictationEngine;
+  private readonly hooks: DictationHooks;
   private state: "idle" | "listening" | "processing" = "idle";
+
+  /**
+   * From the key going down until the words have landed: the assistant's touch watch does not take
+   * this for the user using the PC (packages/platform-win touch.ts).
+   */
+  dictating(): boolean {
+    return this.state !== "idle";
+  }
+  /** The screen is locked; see setLocked. */
+  private screenLocked = false;
+  /** Hands-free: the key is no longer held, and the next press finishes. */
+  private locked = false;
+  /** A tap was released; a second press inside DOUBLE_TAP_MS locks, otherwise it is cancelled. */
+  private tapTimer: NodeJS.Timeout | undefined;
+  private live = false;
+  private text = "";
   private mode: Mode = "exact";
   private pressedAt = 0;
   private chunks: Int16Array[] = [];
@@ -47,6 +86,8 @@ export class DictationController {
   private run: DictationRun | null = null;
   private opening: Promise<void> = Promise.resolve();
   private resetTimer: NodeJS.Timeout | undefined;
+  /** A notice that arrived while a dictation or its result was on the pill; shown after. */
+  private queued: PillState | null = null;
   /** Where a run is, so a stuck one says in the log where it stopped. */
   private stage = "";
   /**
@@ -57,22 +98,116 @@ export class DictationController {
    */
   private press = 0;
 
-  constructor(pill: PillWindow, mic: MicSource, engine: DictationEngine) {
+  constructor(pill: PillWindow, mic: MicSource, engine: DictationEngine, hooks: DictationHooks = {}) {
     this.pill = pill;
     this.mic = mic;
     this.engine = engine;
+    this.hooks = hooks;
+  }
+
+  /**
+   * The Mac is locked: no dictation starts, and one already running is dropped without typing.
+   * Speech on the lock screen would otherwise be recorded and typed into the login window.
+   */
+  setLocked(locked: boolean): void {
+    this.screenLocked = locked;
+    if (locked && this.state === "listening") void this.cancel();
   }
 
   handleHotkey(event: HotkeyEvent): void {
-    if (event.type === "pressed" && this.state === "idle") this.start(event.mode);
-    else if (event.type === "released" && this.state === "listening") void this.finish();
-    else if (event.type === "cancel" && this.state === "listening") void this.cancel();
+    if (this.screenLocked) return;
+    if (event.type === "cancel") {
+      if (this.state === "listening") void this.cancel();
+      return;
+    }
+    if (event.type === "pressed") {
+      if (this.state === "idle") this.start(event.mode);
+      else if (this.state === "listening" && this.tapTimer) this.lock();
+      else if (this.state === "listening" && this.locked) void this.finish();
+      return;
+    }
+    // Released. In hands-free mode the key is not held, so its releases mean nothing.
+    if (this.state !== "listening" || this.locked) return;
+    if (Date.now() - this.pressedAt < MIN_HOLD_MS) {
+      // Either an accidental tap or the first half of a double tap: wait to see which.
+      this.tapTimer = setTimeout(() => {
+        this.tapTimer = undefined;
+        void this.cancel();
+      }, DOUBLE_TAP_MS);
+      return;
+    }
+    void this.finish();
+  }
+
+  /**
+   * Something to tell the user that is not about the dictation in hand ("Added Aarnav to
+   * dictionary"). Never covers a dictation: it waits until the pill has nothing else to show.
+   */
+  notice(state: PillState): void {
+    if (this.state !== "idle" || this.resetTimer) {
+      this.queued = state;
+      return;
+    }
+    this.show(state, NOTICE_VISIBLE_MS);
+  }
+
+  /** A made-up state on the real pill, from Settings; never over a dictation. */
+  demo(state: PillState): void {
+    if (this.state !== "idle") return;
+    this.show(state, NOTICE_VISIBLE_MS, true);
+  }
+
+  /** A short confirmation once the user has acted on the pill (Copy). */
+  confirm(message: string): void {
+    if (this.state !== "idle") return;
+    this.show({ kind: "done", message }, RESULT_VISIBLE_MS);
+  }
+
+  /** Back to idle now, e.g. once the user has acted on a notice. */
+  dismiss(): void {
+    if (this.state !== "idle") return;
+    clearTimeout(this.resetTimer);
+    this.resetTimer = undefined;
+    this.pill.setState({ kind: "idle" });
+  }
+
+  /** Words heard so far, shown in the pill while the user is still speaking. */
+  heard(text: string): void {
+    if (this.state !== "listening") return;
+    this.text = text;
+    this.showListening();
+  }
+
+  private lock(): void {
+    clearTimeout(this.tapTimer);
+    this.tapTimer = undefined;
+    this.locked = true;
+    this.showListening();
+  }
+
+  private showListening(): void {
+    this.pill.setState({
+      kind: "listening",
+      ...(this.locked ? { locked: true } : {}),
+      ...(this.text ? { text: this.text } : {}),
+    });
+  }
+
+  /** Fires the hooks once per change, however many paths lead out of listening. */
+  private setLive(on: boolean): void {
+    if (on === this.live) return;
+    this.live = on;
+    this.hooks.listening?.(on);
   }
 
   private start(mode: Mode): void {
     clearTimeout(this.resetTimer);
+    this.resetTimer = undefined;
     const press = ++this.press;
     this.state = "listening";
+    this.locked = false;
+    this.text = "";
+    this.setLive(true);
     this.mode = mode;
     this.pressedAt = Date.now();
     this.chunks = [];
@@ -110,15 +245,16 @@ export class DictationController {
       .catch((error: unknown) => {
         if (this.state !== "listening") return;
         this.chunks = [];
+        this.setLive(false);
         this.showResult({ kind: "error", message: message(error) });
       });
   }
 
   private async finish(): Promise<void> {
-    if (Date.now() - this.pressedAt < MIN_HOLD_MS) {
-      await this.cancel();
-      return;
-    }
+    clearTimeout(this.tapTimer);
+    this.tapTimer = undefined;
+    this.locked = false;
+    this.setLive(false);
     this.state = "processing";
     this.pill.setState({ kind: "processing" });
     const started = Date.now();
@@ -150,7 +286,11 @@ export class DictationController {
     this.stage = "finishing (transcript, then the command or the paste)";
     try {
       const result = await run.finish(clip);
-      if (this.state === "processing")
+      if (this.state === "processing" && result.nowhere) {
+        // Nowhere to type it: offered for longer, since the user has to act on it.
+        this.state = "idle";
+        this.show({ kind: "unplaced", text: result.text }, UNPLACED_VISIBLE_MS);
+      } else if (this.state === "processing")
         this.showResult({ kind: "done", message: result.text, warning: result.warning });
     } catch (error) {
       if (this.state === "processing") this.showResult({ kind: "error", message: message(error) });
@@ -163,8 +303,15 @@ export class DictationController {
 
   private async cancel(): Promise<void> {
     const press = this.press;
+    clearTimeout(this.tapTimer);
+    this.tapTimer = undefined;
+    this.locked = false;
+    this.setLive(false);
     this.state = "idle";
-    this.pill.setState({ kind: "idle" });
+    const queued = this.queued;
+    this.queued = null;
+    if (queued) this.show(queued, NOTICE_VISIBLE_MS);
+    else this.pill.setState({ kind: "idle" });
     await this.mic.stop();
     await this.opening;
     // A new press may have started while this waited; its run and audio are not this one's to drop.
@@ -179,6 +326,10 @@ export class DictationController {
     if (this.state === "idle") return;
     this.run = null;
     this.pending = [];
+    this.locked = false;
+    clearTimeout(this.tapTimer);
+    this.tapTimer = undefined;
+    this.setLive(false);
     void this.mic.stop();
     this.showResult({ kind: "error", message: message(error) });
   }
@@ -186,13 +337,31 @@ export class DictationController {
   /** Shows the result briefly; a new dictation can start right away. */
   private showResult(state: PillState): void {
     this.state = "idle";
-    this.pill.setState(state);
-    this.resetTimer = setTimeout(() => this.pill.setState({ kind: "idle" }), RESULT_VISIBLE_MS);
+    this.show(state, RESULT_VISIBLE_MS);
+  }
+
+  private show(state: PillState, ms: number, demo = false): void {
+    clearTimeout(this.resetTimer);
+    this.pill.setState(state, demo);
+    // Heard as well as seen: these wait for the user to act, and the pill may be out of view.
+    if (state.kind === "learned" || state.kind === "unplaced") this.hooks.alert?.();
+    this.resetTimer = setTimeout(() => {
+      this.resetTimer = undefined;
+      if (this.state !== "idle") return;
+      const queued = this.queued;
+      this.queued = null;
+      if (queued) this.show(queued, NOTICE_VISIBLE_MS);
+      else this.pill.setState({ kind: "idle" });
+    }, ms);
   }
 }
 
+/** What the pill says about a failure: our own sentence, or a plain one with the original logged. */
 function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const raw = error instanceof Error ? error.message : String(error);
+  if (forPeople(raw)) return raw.trim();
+  console.error(`dictation: ${raw}`);
+  return "That didn't work. Try again.";
 }
 
 function rms(samples: Int16Array): number {

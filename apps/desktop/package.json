@@ -12,24 +12,32 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist:win": "node scripts/build-icon.mjs && electron-vite build && electron-builder --win --publish never",
+    "dist:demo": "node scripts/build-icon.mjs && electron-vite build --mode demo && electron-builder --win --publish never --config electron-builder.demo.yml",
     "test": "vitest run",
     "release:win": "node scripts/release.mjs",
     "build:icon": "node scripts/build-icon.mjs"
   },
   "devDependencies": {
-    "@fontsource-variable/archivo": "^5.3.0",
-    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource-variable/funnel-display": "^5.3.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/hanken-grotesk": "^5.3.0",
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
     "@fontsource-variable/noto-sans-devanagari": "^5.3.0",
-    "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource-variable/syne": "^5.3.0",
+    "@fontsource-variable/unbounded": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
     "@subx/core": "workspace:*",
     "@subx/platform-win": "workspace:*",
+    "@subx/assistant": "workspace:*",
     "@subx/providers": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^44.4.5",
+    "electron": "44.11.3",
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.8.11",
     "electron-vite": "^5.0.0",
@@ -37,11 +45,10 @@
     "react-dom": "19.2.8",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6",
-    "vitest": "^5.0.2"
+    "vite": "^7.3.8",
+    "vitest": "^5.1.1"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0",
     "koffi": "^3.3.2"
   }
 }

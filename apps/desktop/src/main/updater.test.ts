@@ -62,8 +62,11 @@ describe("updater", () => {
 
   it("surfaces a failed check instead of staying silent", async () => {
     startUpdater(() => {}, true);
-    emit("error", new Error("no release found"));
-    expect(updateState()).toEqual({ kind: "error", message: "no release found" });
+    emit("error", new Error("HttpError: 404 latest.yml"));
+    expect(updateState()).toEqual({
+      kind: "error",
+      message: "Couldn't check for updates. Check your connection and try again.",
+    });
   });
 
   it("installs only once a download has finished", () => {

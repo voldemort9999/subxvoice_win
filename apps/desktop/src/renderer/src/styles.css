@@ -1,86 +1,220 @@
 @import "tailwindcss";
 
 /*
- * The same three colours as the website (docs/design.md), roughly 60 / 30 / 10:
- * Ice Silver is the window, Deep Aubergine is every word and the sidebar, Marigold is the few
- * places the eye should land — the action, the current page, the result.
+ * Four themes, each three colours in roughly 60 / 30 / 10 (docs/design.md): the page, the
+ * instruments that sit on it (sidebar, the launch stage), and one accent spent only on the voice:
+ * what is live, what is chosen, the one thing to press. Butter is the default; the theme is chosen
+ * in Settings → Appearance and kept per Mac. Components use the role names, never the hex.
  *
- * Marigold on Ice Silver is ~1.9:1, so on light ground it is only ever a FILL (buttons, edges,
- * bars). As type it appears only on Aubergine, where it reaches 7.5:1 — which is why the active
- * page in the sidebar can be Marigold text and nothing in the content area is.
- *
- * The user's voice is not a colour here. What the microphone heard is set in DM Mono and what was
- * typed in Archivo, the same split the website makes — so there is no second accent to invent.
- *
- * Components use the role names (--page, --ink, --accent-ink…), never the hex, so dark is just a
- * second set of roles taken from the same three colours. Light is the default.
+ * Each accent has a value for type on the page (--accent-ink, ≥4.5:1) and a lifted one for the
+ * inverted surfaces (--side-accent), because no single shade reads on both grounds.
+ * --shade is the page's own shadow colour, so emboss and deboss look carved from that material
+ * rather than stamped in grey. --stage* is the launch and sign-in stage, drawn on a canvas.
  */
-:root,
-:root[data-theme="light"] {
-  --page: #dde3e8; /* Ice Silver */
-  --paper: #e9edf1; /* Silver lifted, for the few things that sit on it */
-  --ink: #3a0f34; /* Deep Aubergine */
-  --ink-soft: #6e4a68; /* ~5.9:1 on Silver */
-  --ink-faint: #8f7389; /* ~3.6:1 — marks and secondary small text only */
-  --rule: rgb(58 15 52 / 14%);
-  --rule-strong: rgb(58 15 52 / 32%);
-  --well: rgb(58 15 52 / 6%); /* tracks, hover, empty bars */
-  --marigold: #eaaa00;
-  --on-marigold: #3a0f34; /* 7.5:1 — the only text a Marigold fill carries */
-  --accent-ink: #7d5c00; /* Marigold darkened until it reads as type on Silver */
 
-  /* The one surface that inverts. */
-  --side: #3a0f34;
-  --side-ink: #dde3e8;
-  --side-soft: rgb(221 227 232 / 64%);
-  --side-rule: #4c1f46;
+/* Butter — warm and calm: cream rests the eyes, ultramarine reads as trust and clarity. */
+:root,
+:root[data-theme="butter"] {
+  --page: #f2e8c8;
+  --paper: #faf4df;
+  --sunk: #e9ddb8;
+  --raised-top: #fdf9ea;
+  --ink: #161412;
+  --ink-soft: #4a4438;
+  --ink-faint: #6c6453;
+  --accent: #3046e8;
+  --on-accent: #faf4df;
+  --accent-ink: #3046e8;
+  --side: #161412;
+  --side-ink: #f2e8c8;
+  --side-accent: #6b7cff;
+  --shade: 70 56 20;
+  --stage: #161412;
+  --stage-ink: 242 232 200;
+  --stage-accent: 107 124 255;
   color-scheme: light;
 }
 
-:root[data-theme="dark"] {
-  --page: #3a0f34;
-  --paper: #4c1f46;
-  --ink: #dde3e8;
-  --ink-soft: #b4a8b4;
-  --ink-faint: #8f7a8e;
-  --rule: rgb(221 227 232 / 13%);
-  --rule-strong: rgb(221 227 232 / 28%);
-  --well: rgb(221 227 232 / 7%);
-  --marigold: #eaaa00;
-  --on-marigold: #3a0f34;
-  --accent-ink: #eaaa00; /* on Aubergine Marigold is legible as itself */
-
-  --side: #2c0b28;
-  --side-ink: #dde3e8;
-  --side-soft: rgb(221 227 232 / 60%);
-  --side-rule: #4c1f46;
+/*
+ * Night — low glare for late hours. Charcoal leads and the instruments are one step lighter, not
+ * cream: a bright panel beside a dark page was the glare this theme exists to remove. Text is a dim
+ * cream rather than near-white, and the blue is softened so it does not buzz on black.
+ */
+:root[data-theme="night"] {
+  --page: #191715;
+  --paper: #22201c;
+  --sunk: #121110;
+  --raised-top: #2e2b26;
+  --ink: #e2d8be;
+  --ink-soft: #bfb69f;
+  --ink-faint: #978e78;
+  --accent: #7c89f5;
+  --on-accent: #121110;
+  --accent-ink: #9aa4fb;
+  --side: #262320;
+  --side-ink: #e2d8be;
+  --side-accent: #9aa4fb;
+  --shade: 0 0 0;
+  --stage: #151311;
+  --stage-ink: 239 229 197;
+  --stage-accent: 107 124 255;
   color-scheme: dark;
 }
 
+/* Ink — deep focus: navy steadies attention, tangerine is the nudge to act. */
+:root[data-theme="ink"] {
+  --page: #e8ecf3;
+  --paper: #f6f8fb;
+  --sunk: #dbe1eb;
+  --raised-top: #fbfcfe;
+  --ink: #13203a;
+  --ink-soft: #384560;
+  --ink-faint: #5d6981;
+  --accent: #f0652f;
+  --on-accent: #13203a;
+  --accent-ink: #b7421a;
+  --side: #13203a;
+  --side-ink: #e8ecf3;
+  --side-accent: #ff8a5c;
+  --shade: 20 32 58;
+  --stage: #13203a;
+  --stage-ink: 232 236 243;
+  --stage-accent: 255 138 92;
+  color-scheme: light;
+}
+
+/* Plum — creative and warm: plum for imagination, marigold for optimism. */
+:root[data-theme="plum"] {
+  --page: #f3ecf1;
+  --paper: #fbf7fa;
+  --sunk: #e7dce5;
+  --raised-top: #fdfafc;
+  --ink: #2c1830;
+  --ink-soft: #523e58;
+  --ink-faint: #756079;
+  --accent: #e8a317;
+  --on-accent: #2c1830;
+  --accent-ink: #875a00;
+  --side: #2c1830;
+  --side-ink: #f3ecf1;
+  --side-accent: #f2b632;
+  --shade: 60 28 60;
+  --stage: #2c1830;
+  --stage-ink: 243 236 241;
+  --stage-accent: 242 182 50;
+  color-scheme: light;
+}
+
+/*
+ * Font pairs (Settings → Appearance), all open-licensed and bundled, since the window's CSP allows
+ * only 'self'. --display-weight because a single-weight face (Instrument Serif) must not be drawn
+ * in a fake bold.
+ */
+:root[data-font="funnel"] {
+  --face-display: "Funnel Display Variable";
+  --face-text: "Geist Variable";
+  --display-weight: 600;
+}
+/* The Mac's own San Francisco: the plain, light look of macOS itself, and the default (bare :root)
+   until the person picks another. Nothing to bundle, since every Mac has it. */
+:root,
+:root[data-font="mac"] {
+  --face-display: -apple-system, BlinkMacSystemFont;
+  --face-text: -apple-system, BlinkMacSystemFont;
+  --display-weight: 500;
+}
+:root[data-font="grotesk"] {
+  --face-display: "Hanken Grotesk Variable";
+  --face-text: "Hanken Grotesk Variable";
+  --display-weight: 600;
+}
+:root[data-font="editorial"] {
+  --face-display: "Instrument Serif";
+  --face-text: "Instrument Sans Variable";
+  --display-weight: 400;
+}
+:root[data-font="syne"] {
+  --face-display: "Syne Variable";
+  --face-text: "Manrope Variable";
+  --display-weight: 600;
+}
+:root[data-font="wide"] {
+  --face-display: "Unbounded Variable";
+  --face-text: "Manrope Variable";
+  --display-weight: 500;
+}
+
+/*
+ * Light — clean and bright, for a well-lit room: white page, a pale grey sidebar that does not
+ * invert, and black for the voice (the user's choice: a colour accent read as noise here). The one theme whose instruments are light, so its inset and
+ * emboss shadows are a breath rather than a carve.
+ */
+:root[data-theme="light"] {
+  --page: #ffffff;
+  --paper: #fafafb;
+  --sunk: #f1f1f4;
+  --raised-top: #ffffff;
+  --ink: #18181b;
+  --ink-soft: #42424c;
+  --ink-faint: #696974;
+  --accent: #18181b;
+  --on-accent: #ffffff;
+  --accent-ink: #18181b;
+  --side: #f3f3f5;
+  --side-ink: #18181b;
+  --side-accent: #18181b;
+  --side-inset: inset 0 1px 2px rgb(24 24 40 / 6%);
+  --shade: 24 24 40;
+  --stage: #18181b;
+  --stage-ink: 244 244 246;
+  --stage-accent: 255 255 255;
+  color-scheme: light;
+}
+
+/* Everything else is derived, so a theme is only the values above. */
+:root {
+  --rule: color-mix(in srgb, var(--ink) 11%, transparent);
+  --rule-strong: color-mix(in srgb, var(--ink) 26%, transparent);
+  --well: color-mix(in srgb, var(--ink) 6%, transparent);
+  --side-soft: color-mix(in srgb, var(--side-ink) 74%, transparent);
+  --side-rule: color-mix(in srgb, var(--side-ink) 12%, var(--side));
+}
+:root:not([data-theme="light"]) {
+  --side-inset: inset 0 1px 2px rgb(0 0 0 / 60%);
+}
+
 @theme inline {
+  /* The smallest text in the app is 13px; Tailwind's 12px was too small to read comfortably. */
+  --text-xs: 13px;
+  --text-xs--line-height: 1.5;
   --color-page: var(--page);
   --color-paper: var(--paper);
+  --color-sunk: var(--sunk);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-ink-faint: var(--ink-faint);
   --color-rule: var(--rule);
   --color-rule-strong: var(--rule-strong);
   --color-well: var(--well);
-  --color-marigold: var(--marigold);
-  --color-on-marigold: var(--on-marigold);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
   --color-accent-ink: var(--accent-ink);
   --color-side: var(--side);
   --color-side-ink: var(--side-ink);
   --color-side-soft: var(--side-soft);
   --color-side-rule: var(--side-rule);
+  --color-side-accent: var(--side-accent);
+  --color-stage: var(--stage);
+  --color-stage-ink: rgb(var(--stage-ink));
+  --color-stage-accent: rgb(var(--stage-accent));
 
   /*
    * Devanagari sits second in every stack: none of the Latin faces draw it, so a Hindi transcript
    * falls through to a face made for it, glyph by glyph, wherever it appears.
    */
-  --font-display: "Bricolage Grotesque Variable", "Noto Sans Devanagari Variable", system-ui, sans-serif;
-  --font-sans: "Archivo Variable", "Noto Sans Devanagari Variable", system-ui, sans-serif;
-  --font-mono: "DM Mono", "Noto Sans Devanagari Variable", ui-monospace, monospace;
+  --font-display: var(--face-display), "Noto Sans Devanagari Variable", system-ui, sans-serif;
+  --font-sans: var(--face-text), "Noto Sans Devanagari Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Noto Sans Devanagari Variable", ui-monospace, monospace;
 }
 
 /*
@@ -99,7 +233,8 @@
     background: var(--page);
     color: var(--ink);
     font-family: var(--font-sans);
-    font-size: 13px;
+    /* 14px: 13 strained the eyes, 15 felt heavy. Contrast, not size, does the rest. */
+    font-size: 14px;
     -webkit-font-smoothing: antialiased;
     cursor: default;
     user-select: none;
@@ -109,14 +244,12 @@
     border-color: var(--rule);
   }
 
-  /* Headings are Bricolage; its optical-size axis keeps a 15px heading from looking like a shrunk poster. */
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    font-weight: 700;
-    font-optical-sizing: auto;
-    letter-spacing: -0.018em;
+    font-weight: var(--display-weight);
+    letter-spacing: -0.025em;
     line-height: 1.1;
     text-wrap: balance;
     margin: 0;
@@ -127,7 +260,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--ink);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
     border-radius: 3px;
   }
@@ -146,8 +279,7 @@
 /* A big figure: the display face, because a number is the headline of its column. */
 @utility figure {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-optical-sizing: auto;
+  font-weight: var(--display-weight);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -168,20 +300,56 @@
   user-select: text;
 }
 
-/* A physical key, because the product is a key you hold. Same object as on the website. */
+/*
+ * A physical key, because the product is a key you hold: cream, raised out of the surface. It is
+ * the most embossed thing in the app, since it is the one thing the user presses every time.
+ */
 @utility kbd {
-  display: inline-block;
+  display: inline-grid;
+  place-items: center;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--rule-strong);
-  border-bottom-width: 3px;
-  border-radius: 4px;
-  background: var(--paper);
-  color: var(--ink);
+  padding: 0.2rem 0.55rem 0.3rem;
+  border-radius: 6px;
+  color: #161412;
+  background: linear-gradient(180deg, #fffaea, #e2d5ad);
+  /* The keycap is always cream, in every theme: it is the one physical object on screen. */
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -2px 0 rgb(var(--shade) / 25%),
+    0 1px 2px rgb(0 0 0 / 30%);
   white-space: nowrap;
+}
+
+/*
+ * Emboss and deboss, the one material language of the window: what you press stands up out of the
+ * cream (buttons, the key, a toggle's knob); what holds a value is pressed into it (fields, tracks,
+ * the stats tray). Never both on one thing, and never on plain sections.
+ */
+@utility raised {
+  background: linear-gradient(180deg, var(--raised-top), var(--sunk));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--raised-top) 90%, white),
+    inset 0 -2px 0 rgb(var(--shade) / 12%),
+    0 2px 4px -1px rgb(var(--shade) / 22%),
+    0 0 0 1px var(--rule);
+}
+@utility raised-accent {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white), var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 35%),
+    inset 0 -2px 0 rgb(0 0 30 / 25%),
+    0 8px 18px -10px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 0 1px rgb(0 0 0 / 25%);
+}
+@utility pressed-in {
+  background: var(--sunk);
+  box-shadow:
+    inset 0 2px 4px rgb(var(--shade) / 22%),
+    inset 0 -1px 0 color-mix(in srgb, var(--raised-top) 70%, transparent),
+    0 1px 0 color-mix(in srgb, var(--raised-top) 60%, transparent);
 }
 
 .scroll-area {
@@ -206,5 +374,55 @@
     transition: none !important;
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every animation */
     animation: none !important;
+  }
+}
+
+/* The pill's own motion, here too so the preview in Settings moves like the real one. */
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@keyframes pill-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* The mark's motion (shared/MotionMark.tsx): the wave breathes, the underscore blinks. */
+@keyframes motion-mark-breathe {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+@keyframes motion-mark-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.12;
+  }
+}
+.motion-mark-wave {
+  animation: motion-mark-breathe 1.3s ease-in-out infinite;
+}
+.motion-mark-cursor {
+  animation: motion-mark-blink 1.1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-mark-wave,
+  .motion-mark-cursor {
+    animation: none;
   }
 }

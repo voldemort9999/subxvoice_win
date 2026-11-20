@@ -1,43 +1,85 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, renameSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
-  AgentMemory,
   type DictionaryEntry,
   type HotkeyBinding,
   type PermissionKind,
   Pipeline,
-  runCommand,
+  type SessionRecord,
   SubxError,
-  screenSource,
-  type WritingTone,
 } from "@subx/core";
-import { app, BrowserWindow, ipcMain, Menu, shell, type Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+  ipcMain,
+  powerMonitor,
+  screen,
+  session,
+  shell,
+  type Tray,
+  type WebContents,
+} from "electron";
+import { dayKey } from "../shared/day-key";
 import {
   type AppInfo,
   type AppSettings,
+  type DayTotal,
+  HISTORY_KEEP_MS,
   IPC,
   type MicrophoneOption,
+  type Navigation,
   type PermissionStatus,
+  type PillState,
+  type VoiceSettings,
 } from "../shared/ipc";
+import { isPillPlace } from "../shared/pill-place";
+import { assistantFactory } from "./assistant";
 import { Account } from "./auth";
+import { createBackend } from "./backend";
 import { appIcon } from "./brand";
+import { CountedHistoryStore, DailyTotals } from "./daily-totals";
+import { loadAssistantKeys, logDemoToFile, viaBackend } from "./demo";
 import { DictationController } from "./dictation";
-import { PillMic } from "./mic";
+import { createFollow, parseReply } from "./follow";
+import { hotkeyRefusal } from "./hotkey-choice";
+import { EditLearner } from "./learner";
+import { nativeMic, PillMic } from "./mic";
 import { PillWindow } from "./pill";
 import { createPlatform } from "./platform";
-import { createEngines, loadDevEnv } from "./providers";
+import { apiUrl, createStt, devToken, loadDevEnv } from "./providers";
 import { deleteRecording, recordingsDir, saveRecording, setRecordingsDir } from "./recordings";
 import { loadPage, PRELOAD_PATH } from "./renderer";
-import { JsonDictionaryStore, JsonHistoryStore, JsonSettingsStore } from "./stores";
+import { addStarterWords } from "./starter-words";
+import { JsonDictionaryStore, JsonFile, JsonSettingsStore } from "./stores";
 import { createTray } from "./tray";
 import { checkForUpdate, installUpdate, startUpdater, updateState } from "./updater";
+import { VoiceSettingsCopy } from "./voice";
 import { createWorkflow } from "./workflow";
 
 const HOTKEY_RETRY_MS = 3000;
+/** Follow My Words: hold Ctrl + Alt and say what to do on the PC (Windows). */
+const COMMAND_KEYS = "ctrl+alt";
 /** A renderer killed for memory dies again if reloaded straight away. */
 const RENDERER_RELOAD_MS = 500;
+
+/**
+ * The installed app holds the microphone and drives the keyboard and screen, so nothing else on
+ * the PC may drive it from outside: a remote-debugging port would let any local program run script
+ * in its windows (the Mac's shipped build accepted one, 2026-11-19). Development keeps it, to
+ * inspect the pill. ELECTRON_RUN_AS_NODE, NODE_OPTIONS and --inspect are refused by Electron's
+ * fuses (electron-builder.yml).
+ */
+if (
+  app.isPackaged &&
+  (app.commandLine.hasSwitch("remote-debugging-port") || app.commandLine.hasSwitch("remote-debugging-pipe"))
+) {
+  app.exit(1);
+}
 
 /**
  * One instance, always.
@@ -70,9 +112,8 @@ const APP_DATA = [
 /**
  * Carries a 0.1.0 install's data to the renamed userData folder.
  *
- * package.json had no productName until 0.1.1, so both Windows-facing names fell back to the
- * package name: the app installed into `Programs\@subxdesktop` and kept everything under
- * `AppData\Roaming\@subx\desktop`. Naming the product moved userData, which would otherwise
+ * package.json had no productName until 0.1.1, so userData fell back to the package name
+ * (`Application Support/@subx/desktop`). Naming the product moved userData, which would otherwise
  * leave an upgrading install empty and signed out.
  *
  * Electron creates userData before this file runs, so the folder already existing says nothing —
@@ -96,12 +137,46 @@ function migrateUserData(): void {
   }
 }
 migrateUserData();
+logDemoToFile();
 
 loadDevEnv();
+loadAssistantKeys();
 const platform = createPlatform();
+
+/**
+ * Our own pages: the bundled renderer files in a build, the Vite server in development. Only they
+ * may load in our windows or call the main process; anything else that ever got into a window (a
+ * dropped file, a stray link) would otherwise reach the preload bridge: history, recordings, account
+ * deletion. Compared by path, not origin: every file:// URL has the same origin, "null".
+ */
+const RENDERER_FILES = `${pathToFileURL(join(__dirname, "../renderer")).href}/`;
+function ownPage(url: string): boolean {
+  if (url.startsWith(RENDERER_FILES)) return true;
+  const dev = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
+  return !!dev && url.startsWith(`${dev}/`);
+}
+const fromOwnPage = (event: IpcMainEvent | IpcMainInvokeEvent): boolean =>
+  ownPage(event.senderFrame?.url ?? "");
+
+/** ipcMain.handle, for our own pages only. */
+// biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
+function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!fromOwnPage(event)) throw new Error("Refused: only SUBXVoice's own windows may ask for this.");
+    return listener(event, ...args);
+  });
+}
+/** ipcMain.on, for our own pages only; anything else is dropped. */
+// biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
+function listen(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
+  ipcMain.on(channel, (event, ...args) => {
+    if (fromOwnPage(event)) listener(event, ...args);
+  });
+}
+/** The main window is destroyed on close and made again; this tells its renderer it is the same run. */
+const STARTED_AT = Date.now();
 // Built in start(), because the account they depend on needs the app to be ready first.
 let account: Account;
-let engines: ReturnType<typeof createEngines> = { problems: [] };
 /** Reported by the renderer, which is the only side with MediaDevices. */
 let microphones: MicrophoneOption[] = [];
 let mainWindow: BrowserWindow | null = null;
@@ -109,33 +184,70 @@ let mainWindow: BrowserWindow | null = null;
 let pillWindow: PillWindow | null = null;
 let tray: Tray | null = null; // kept in a variable so it isn't garbage-collected
 
-/** True when Windows launched us at login (see the login item's args). */
+/** True when macOS launched us at login (see the login item's args). */
 const startedHidden = () => process.argv.includes("--hidden") || app.getLoginItemSettings().wasOpenedAtLogin;
 
-function openMainWindow(): void {
+/**
+ * Where the dashboard should go once it is up, for a menu bar item such as "Change Languages…".
+ * Sent after the page has loaded when the window is new, because a message to a page still loading
+ * is lost.
+ */
+/**
+ * Shows a window where the user is looking. A window lives on one desktop (Space), so with a
+ * full-screen app in front, opening SUBXVoice from the menu bar switched to another desktop instead
+ * of appearing (2026-11-20). Joining every desktop for the moment it is shown brings it to this one,
+ * over a full-screen app too; leaving them again right after keeps it a normal window.
+ */
+function showOnThisSpace(window: BrowserWindow): void {
+  if (process.platform === "darwin") {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+  window.show();
+  window.focus();
+  if (process.platform === "darwin") {
+    setTimeout(() => {
+      if (!window.isDestroyed()) window.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: true });
+    }, 200);
+  }
+}
+
+function openingSize(): { width: number; height: number } {
+  const { width, height } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize;
+  return { width: Math.min(1200, width - 40), height: Math.min(780, height - 40) };
+}
+
+function openMainWindow(to?: Navigation): void {
+  const go = () => {
+    if (to) mainWindow?.webContents.send(IPC.navigate, to);
+  };
   // Opening the app is what someone does when the pill has vanished, so it is the natural place
   // to put it back — it used to touch only the main window, which is why force-quitting was the
   // only thing that worked.
   pillWindow?.revive();
+  app.focus({ steal: true });
   if (mainWindow) {
     // A dead renderer leaves the window as a blank white rectangle, and showing it again shows
     // the same blank rectangle. Reload first, so opening the app is a real recovery.
     if (mainWindow.webContents.isCrashed()) mainWindow.webContents.reload();
-    mainWindow.show();
-    mainWindow.focus();
+    showOnThisSpace(mainWindow);
+    go();
     return;
   }
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 680,
-    // Without this the taskbar and Alt-Tab show Electron's own icon.
-    icon: appIcon(),
+    // Wide enough for Home's four setup boxes side by side (at 1000 px they were squeezed), and
+    // never larger than the screen it opens on.
+    ...openingSize(),
     minWidth: 760,
     minHeight: 520,
     show: false,
+    titleBarStyle: platform.os === "mac" ? "hiddenInset" : "default",
     webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
   });
-  mainWindow.on("ready-to-show", () => mainWindow?.show());
+  // Windows draws Electron's File / Edit / View menu under the title; this app has none.
+  if (platform.os !== "mac") mainWindow.removeMenu();
+  mainWindow.on("ready-to-show", () => {
+    if (mainWindow) showOnThisSpace(mainWindow);
+  });
   // Same failure the pill has: the window survives its renderer and draws nothing. Here it is a
   // blank white page rather than an invisible one, which looks broken rather than absent.
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -149,6 +261,7 @@ function openMainWindow(): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  mainWindow.webContents.once("did-finish-load", go);
   loadPage(mainWindow, "index.html");
 }
 
@@ -178,22 +291,20 @@ function assertString(value: unknown, name: string): string {
 
 function assertDictionaryEntry(value: unknown): DictionaryEntry {
   const entry = value as Partial<DictionaryEntry> | null;
-  const misheardAs = Array.isArray(entry?.misheardAs) ? entry.misheardAs : [];
+  const strings = (list: unknown) =>
+    Array.isArray(list)
+      ? list.filter((item): item is string => typeof item === "string" && !!item.trim())
+      : [];
+  const writtenAs = strings(entry?.writtenAs);
   return {
     word: assertString(entry?.word, "word"),
-    misheardAs: misheardAs.filter((item): item is string => typeof item === "string" && !!item.trim()),
+    misheardAs: strings(entry?.misheardAs),
+    ...(entry?.source === "learned" || entry?.source === "you" ? { source: entry.source } : {}),
+    ...(typeof entry?.addedAt === "number" ? { addedAt: entry.addedAt } : {}),
+    ...(writtenAs.length > 0 ? { writtenAs } : {}),
+    ...(typeof entry?.learnedIn === "string" ? { learnedIn: entry.learnedIn.slice(0, 100) } : {}),
   };
 }
-
-/** The command key's default. See the comment where settings are created. */
-const COMMAND_KEYS = "ctrl+alt";
-
-/** "alt+ctrl" and "ctrl+alt" are the same chord. */
-const sameChord = (a: string, b: string) =>
-  a.toLowerCase().split("+").sort().join("+") === b.toLowerCase().split("+").sort().join("+");
-
-const isTone = (value: unknown): value is WritingTone =>
-  value === "professional" || value === "formal" || value === "casual";
 
 /** Settings arrive from the renderer, so every field is checked before it is stored. */
 function assertSettings(value: unknown, accepts: (keys: string) => boolean): Partial<AppSettings> {
@@ -203,14 +314,21 @@ function assertSettings(value: unknown, accepts: (keys: string) => boolean): Par
     if (!accepts(input.hotkey)) throw new Error(`Unsupported hotkey: ${input.hotkey}`);
     patch.hotkey = input.hotkey;
   }
-  if (typeof input.commandHotkey === "string") {
-    if (!accepts(input.commandHotkey)) throw new Error(`Unsupported hotkey: ${input.commandHotkey}`);
-    patch.commandHotkey = input.commandHotkey;
-  }
-  if (input.script === "native" || input.script === "roman") patch.script = input.script;
   if (typeof input.launchAtLogin === "boolean") patch.launchAtLogin = input.launchAtLogin;
-  if (isTone(input.emailTone)) patch.emailTone = input.emailTone;
-  if (isTone(input.messageTone)) patch.messageTone = input.messageTone;
+  if (typeof input.sounds === "boolean") patch.sounds = input.sounds;
+  if (typeof input.muteAudio === "boolean") patch.muteAudio = input.muteAudio;
+  if (typeof input.voiceCleanup === "boolean") patch.voiceCleanup = input.voiceCleanup;
+  if (typeof input.pillWhenIdle === "boolean") patch.pillWhenIdle = input.pillWhenIdle;
+  if (typeof input.learnWords === "boolean") patch.learnWords = input.learnWords;
+  if (typeof input.pillLiveText === "boolean") patch.pillLiveText = input.pillLiveText;
+  if (input.pillStyle === "classic" || input.pillStyle === "line")
+    patch.pillStyle = input.pillStyle as AppSettings["pillStyle"];
+  if (
+    input.keepHistory === "forever" ||
+    (typeof input.keepHistory === "string" && Object.hasOwn(HISTORY_KEEP_MS, input.keepHistory))
+  )
+    patch.keepHistory = input.keepHistory;
+  if (isPillPlace(input.pillPosition)) patch.pillPosition = input.pillPosition;
   if (typeof input.microphoneId === "string" && input.microphoneId.length <= 200) {
     patch.microphoneId = input.microphoneId;
   }
@@ -218,17 +336,34 @@ function assertSettings(value: unknown, accepts: (keys: string) => boolean): Par
 }
 
 async function start(): Promise<void> {
+  // The packaged app's Dock icon comes from its bundle; this makes the development build (which
+  // runs inside Electron.app) show the SUBXVoice mark in the Dock and ⌘-Tab too.
+  app.dock?.setIcon(appIcon());
   const dataDir = app.getPath("userData");
   await mkdir(dataDir, { recursive: true });
 
-  account = new Account();
+  account = new Account(apiUrl(), devToken());
   // Signing in once should last; a session that no longer refreshes just asks again.
   await account.restore();
-  engines = createEngines(account);
+  // Bound once the account's folder is known (below); until then a dictation sends no settings and
+  // the server reads its own copy.
+  let voiceForDictation: () => Promise<Record<string, unknown> | null> = async () => null;
+  const stt = createStt(
+    () => account.token(),
+    () => voiceForDictation(),
+  );
   // Transcripts, dictionary and audio belong to the person signed in, not to the machine. They
   // live in a folder named after the account so the next person to sign in starts empty.
   let accountDir = join(dataDir, "accounts", "signed-out");
-  const history = new JsonHistoryStore(() => join(accountDir, "history.json"));
+  // The daily totals read the history once, to build themselves; after that the history tells them.
+  const totals: DailyTotals = new DailyTotals(
+    () => join(accountDir, "daily-totals.json"),
+    (): Promise<SessionRecord[]> => history.recent(Number.MAX_SAFE_INTEGER),
+  );
+  const history: CountedHistoryStore = new CountedHistoryStore(
+    () => join(accountDir, "history.json"),
+    totals,
+  );
   const dictionary = new JsonDictionaryStore(() => join(accountDir, "dictionary.json"));
 
   const switchAccountData = async (userId: string | null) => {
@@ -237,32 +372,76 @@ async function start(): Promise<void> {
     setRecordingsDir(join(accountDir, "recordings"));
     history.forget();
     dictionary.forget();
+    voice.forget();
+    learner.forget();
+    // Built now, in the background, so the first dictation does not wait for it.
+    void totals.load().catch(() => {});
+    // A different person's settings: theirs from the server (another device may have changed them).
+    void voice.sync();
   };
 
+  const backend = createBackend(apiUrl(), () => account.token(), `win/${app.getVersion()}`);
+  const voice = new VoiceSettingsCopy(() => join(accountDir, "voice-settings.json"), backend, dictionary);
+  voiceForDictation = () => voice.forDictation();
+  const learner = new EditLearner({
+    field: platform.field,
+    dictionary,
+    memoryPath: () => join(accountDir, "learned.json"),
+    enabled: async () => (await settings.all()).learnWords,
+    onLearned: (words) => {
+      void voice.pushDictionary();
+      dictation.notice({ kind: "learned", words });
+    },
+    log: (line) => console.log(line),
+  });
+
   // Point at the restored account's folder before anything reads from it.
+  // The product's name and the person's own name in the dictionary, once per account
+  // (starter-words.ts). Once: a word they delete later stays deleted.
+  const starterWords = new JsonFile<{ added: boolean }>(() => join(accountDir, "starter-words.json"), {
+    added: false,
+  });
+  let givingStarterWords: Promise<void> = Promise.resolve();
+  const giveStarterWords = (state: { signedIn: boolean; onboarded: boolean; name: string }) => {
+    if (!state.signedIn || !state.onboarded) return;
+    givingStarterWords = givingStarterWords
+      .then(async () => {
+        if ((await starterWords.read()).added) return;
+        if ((await addStarterWords(dictionary, state.name)) > 0) void voice.pushDictionary();
+        await starterWords.write({ added: true });
+      })
+      .catch((error: unknown) =>
+        console.warn("starter words:", error instanceof Error ? error.message : error),
+      );
+  };
+
   await switchAccountData((await account.state()).id);
+  giveStarterWords(await account.state());
 
   // Settings stay with the machine: the hotkey, microphone and startup choice describe this
   // computer, not the person.
   const settings = new JsonSettingsStore<AppSettings>(() => join(dataDir, "settings.json"), {
     hotkey: platform.hotkey.defaultBindings()[0]?.keys ?? "",
-    // Ctrl+Alt, not Fn+Alt: Fn is handled inside the keyboard and never reaches Windows, so no
-    // application can watch it. Not Win+Alt either — releasing a chord with Win in it can open
-    // the Start menu.
-    commandHotkey: COMMAND_KEYS,
-    script: "roman",
     microphoneId: "",
+    // On unless the user turns it off: raw input wrote down whoever else was talking in the room.
+    voiceCleanup: true,
     launchAtLogin: false,
-    emailTone: "professional",
-    messageTone: "casual",
+    sounds: true,
+    muteAudio: false,
+    pillWhenIdle: true,
+    learnWords: true,
+    pillLiveText: true,
+    pillPosition: "bottom",
+    keepHistory: "forever",
+    pillStyle: "classic",
   });
 
   /**
-   * Mirrored to the OS rather than stored only by us: the user can also turn it off in Windows
-   * Settings, and whatever they did there last is the truth.
+   * Mirrored to the OS rather than stored only by us: the user can also turn it off in System
+   * Settings → Login Items, and whatever they did there last is the truth.
    */
   const applyLaunchAtLogin = (openAtLogin: boolean) => {
-    if (!app.isPackaged) return; // dev runs from electron.exe, which is not what would autostart
+    if (!app.isPackaged) return; // a dev run is not the app that would start at login
     app.setLoginItemSettings({
       openAtLogin,
       // Started this way the app belongs in the tray, not in front of whatever the user opened.
@@ -272,182 +451,312 @@ async function start(): Promise<void> {
   applyLaunchAtLogin((await settings.all()).launchAtLogin);
 
   const bindings = async (): Promise<HotkeyBinding[]> => {
-    const { hotkey, commandHotkey } = await settings.all();
+    const { hotkey } = await settings.all();
     // settings.json is a file the user can edit, so a stored hotkey is re-checked every time.
     const dictate: HotkeyBinding[] =
       !hotkey || !platform.hotkey.accepts(hotkey)
         ? platform.hotkey.defaultBindings()
         : [{ keys: hotkey, mode: "exact" }];
-    // Watched only where command mode can actually run, and never when it is the dictation chord:
-    // one key cannot mean both, and dictating is what the user set up first.
-    const keys = commandHotkey || COMMAND_KEYS;
-    if (!platform.commands || !engines.decider || !engines.writer) return dictate;
-    if (!platform.hotkey.accepts(keys) || dictate.some((binding) => sameChord(binding.keys, keys)))
-      return dictate;
-    return [...dictate, { keys, mode: "command" }];
+    // Follow My Words (Ctrl + Alt) where the platform can act on the screen: Windows.
+    return platform.screenControl ? [...dictate, { keys: COMMAND_KEYS, mode: "command" }] : dictate;
   };
 
-  ipcMain.handle(IPC.authState, () => account.state());
-  ipcMain.handle(IPC.authSignIn, (_event, email: unknown, password: unknown) =>
-    account.signIn(asText(email, "email"), asText(password, "password")),
-  );
-  ipcMain.handle(IPC.authSignUp, (_event, email: unknown, password: unknown) =>
-    account.signUp(asText(email, "email"), asText(password, "password")),
-  );
-  ipcMain.handle(IPC.authSignOut, () => account.signOut());
-  ipcMain.handle(IPC.authUsage, () => account.usage());
-  ipcMain.handle(IPC.authSetProfile, (_event, name: unknown) => account.setProfile(asText(name, "name")));
+  handle(IPC.authState, () => account.state());
+  handle(IPC.authGoogle, async (_event, options: unknown) => {
+    const chooseAccount = typeof options === "object" && options !== null && "chooseAccount" in options;
+    await account.signInWithGoogle({ chooseAccount: chooseAccount && options.chooseAccount === true });
+    // The browser has the focus now; the app was what the user was signing in to.
+    openMainWindow();
+  });
+  handle(IPC.authStartEmail, (_event, email: unknown) => account.startEmail(asText(email, "email")));
+  handle(IPC.authVerifyCode, (_event, code: unknown) => account.verifyEmailCode(asText(code, "code")));
+  handle(IPC.authResendEmailCode, () => account.resendEmailCode());
+  handle(IPC.authDeleteAccount, async () => {
+    const { id } = await account.state();
+    // The server first: it deletes the sign-in account and its own copy (it needs the session to
+    // know whose); then this PC's sign-in and copy. A failure part way leaves nothing behind that
+    // the next try can't finish.
+    await backend.deleteAccount();
+    await account.deleteAccount();
+    if (id) await rm(join(dataDir, "accounts", id), { recursive: true, force: true });
+  });
+  handle(IPC.authSignOut, () => account.signOut());
+  handle(IPC.authUsage, () => account.usage());
+  handle(IPC.authSetProfile, (_event, name: unknown) => account.setProfile(asText(name, "name")));
   account.onChanged((state) => {
     // Switching accounts switches the data with it, and signing out puts it out of reach.
-    void switchAccountData(state.id).then(() => notifyHistoryChanged());
+    void switchAccountData(state.id).then(() => {
+      notifyHistoryChanged();
+      // Setup just finished (the first name was saved), or someone else signed in.
+      giveStarterWords(state);
+    });
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(IPC.authChanged, state);
     }
   });
 
-  ipcMain.handle(
+  handle(
     IPC.appInfo,
     async (): Promise<AppInfo> => ({
       version: app.getVersion(),
       hotkeys: await bindings(),
       supportedKeys: platform.hotkey.supportedKeys(),
-      providers: { stt: !!engines.stt, llm: !!engines.llm },
+      // macOS watches only the fixed set the Swift helper knows, so Settings offers a list.
+      customHotkeys: platform.hotkey.accepts("ctrl+shift+f9"),
+      nativeMicrophone: !!platform.microphone,
+      // Without a native microphone the pill records, and its `micConstraints` honour the setting.
+      voiceCleanup: platform.microphone ? !!platform.microphone.cleanup : true,
+      startedAt: STARTED_AT,
     }),
   );
-  ipcMain.handle(IPC.openRecordingsFolder, async () => {
+  handle(IPC.openRecordingsFolder, async () => {
     await mkdir(recordingsDir(), { recursive: true });
     await shell.openPath(recordingsDir());
   });
 
-  ipcMain.handle(IPC.permissionList, async (): Promise<PermissionStatus[]> => {
+  handle(IPC.permissionList, async (): Promise<PermissionStatus[]> => {
     const kinds = platform.permissions.required();
     return Promise.all(kinds.map(async (kind) => ({ kind, state: await platform.permissions.status(kind) })));
   });
-  ipcMain.handle(IPC.permissionRequest, (_event, kind: unknown) =>
+  handle(IPC.permissionRequest, (_event, kind: unknown) =>
     platform.permissions.request(assertPermissionKind(kind)),
   );
-  ipcMain.handle(IPC.permissionOpenSettings, (_event, kind: unknown) =>
+  handle(IPC.permissionOpenSettings, (_event, kind: unknown) =>
     platform.permissions.openSettings(assertPermissionKind(kind)),
   );
 
-  ipcMain.handle(IPC.historyList, () => history.recent(Number.MAX_SAFE_INTEGER));
-  ipcMain.handle(IPC.historyAudio, async (_event, id: unknown) => {
+  handle(IPC.historyList, () => history.recent(Number.MAX_SAFE_INTEGER));
+  handle(IPC.statsDays, () => totals.days());
+  handle(IPC.historyAudio, async (_event, id: unknown) => {
     const record = await history.find(assertString(id, "id"));
     if (!record?.audioPath) throw new Error("This recording has no audio");
     return readFile(record.audioPath);
   });
-  ipcMain.handle(IPC.historyRemove, async (_event, id: unknown) => {
+  handle(IPC.historyRemove, async (_event, id: unknown) => {
     const record = await history.find(assertString(id, "id"));
     if (!record) return;
     if (record.audioPath) await deleteRecording(record.audioPath);
     await history.remove(record.id);
     notifyHistoryChanged();
   });
+  handle(IPC.historyClear, async () => {
+    await dropRecords(await history.removeWhere(() => true));
+  });
 
-  ipcMain.handle(IPC.dictionaryList, () => dictionary.all());
-  ipcMain.handle(IPC.dictionaryUpsert, (_event, entry: unknown) =>
-    dictionary.upsert(assertDictionaryEntry(entry)),
-  );
-  ipcMain.handle(IPC.dictionaryRemove, (_event, word: unknown) =>
-    dictionary.remove(assertString(word, "word")),
-  );
+  /** Deletes the recordings of records already taken out of history. */
+  async function dropRecords(records: SessionRecord[]): Promise<void> {
+    for (const record of records)
+      if (record.audioPath) await deleteRecording(record.audioPath).catch(() => {});
+    if (records.length > 0) notifyHistoryChanged();
+  }
+
+  /**
+   * Deletes what is older than the user keeps (Settings → Privacy and data). Run at start, when the
+   * setting changes and every hour, so "24 hours" means about that rather than "until next launch".
+   */
+  const pruneHistory = async () => {
+    const keep = (await settings.all()).keepHistory;
+    if (keep === "forever") return;
+    const cutoff = Date.now() - HISTORY_KEEP_MS[keep];
+    await dropRecords(await history.removeWhere((record) => record.createdAt < cutoff));
+  };
+  void pruneHistory();
+  setInterval(() => void pruneHistory(), 60 * 60 * 1000);
+
+  handle(IPC.dictionaryList, () => dictionary.all());
+  handle(IPC.dictionaryUpsert, async (_event, entry: unknown) => {
+    await dictionary.upsert(assertDictionaryEntry(entry));
+    void voice.pushDictionary();
+  });
+  handle(IPC.dictionaryLearning, async () => ({
+    pending: await learner.pending(),
+    removed: await learner.removedWords(),
+  }));
+  handle(IPC.dictionaryAcceptPending, async (_event, key: unknown) => {
+    await learner.acceptPending(assertString(key, "key"));
+    void voice.pushDictionary();
+  });
+  handle(IPC.dictionaryDropPending, (_event, key: unknown) => learner.dropPending(assertString(key, "key")));
+  handle(IPC.dictionaryAllowAgain, (_event, word: unknown) => learner.allowAgain(assertString(word, "word")));
+  handle(IPC.dictionaryRemove, async (_event, word: unknown) => {
+    await dictionary.remove(assertString(word, "word"));
+    await learner.removed(assertString(word, "word"));
+    void voice.pushDictionary();
+  });
 
   const pill = new PillWindow();
+  // Browser permissions: copying to the clipboard for our own pages, and the microphone only for
+  // the pill, only where there is no native microphone (on Windows there is none). Nothing else.
+  const mayUseMedia = (contents: WebContents | null) =>
+    !platform.microphone && !!contents && pill.owns(contents);
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
+    if (permission === "media") return callback(mayUseMedia(contents));
+    callback(permission === "clipboard-sanitized-write" && ownPage(contents.getURL()));
+  });
+  // A check is not an opening: on Windows the main window lists the microphones (useMicrophones),
+  // and Chromium names them only for a page whose media check passes — refused, the picker said
+  // "Microphone 1, 2…". The pill alone may still open one (the request handler above).
+  session.defaultSession.setPermissionCheckHandler((contents, permission) => {
+    if (permission === "media") return !platform.microphone && !!contents && ownPage(contents.getURL());
+    return !!contents && ownPage(contents.getURL());
+  });
+  pill.setIdleVisible((await settings.all()).pillWhenIdle);
+  pill.setPosition((await settings.all()).pillPosition);
   pillWindow = pill;
-  // The mic runs as Web Audio inside the pill window.
+  // Native mic when the OS plug has one (Mac: Swift helper); otherwise Web Audio in the pill.
   const pillMic = new PillMic(pill);
-  const pipeline = engines.stt
-    ? new Pipeline({
-        stt: engines.stt,
-        llm: engines.llm,
-        decider: engines.decider,
-        inserter: platform.inserter,
-        history,
-        dictionary,
+  const mic = platform.microphone ? nativeMic(platform.microphone) : pillMic;
+  const pipeline = new Pipeline({ stt, inserter: platform.inserter, history, dictionary });
+
+  // Follow My Words' assistant (plan T15): the command key starts a run; speech during it goes to
+  // that run. Its words are heard on the same server socket as dictation (workflow.ts openCommand).
+  const makeAssistant = assistantFactory({
+    platform,
+    token: () => account.token(),
+    dictationActive: () => dictation.dictating(),
+    // Everything it types is in Roman letters, Hinglish for Hindi (user, 2026-11-19).
+    script: () => "roman",
+  });
+  const follow = makeAssistant
+    ? createFollow({
+        assistant: makeAssistant,
+        onEvent: (event) => {
+          // One line per event: a run that stalls says where in the log.
+          console.log(`assistant: ${JSON.stringify(event).slice(0, 300)}`);
+          pill.assistantEvent(event);
+        },
       })
     : null;
+  const listenForCommand = async () => {
+    if (!stt.startStream) throw new Error("Speech-to-text can't stream here");
+    const words = (await dictionary.all()).map((entry) => entry.word);
+    const stream = await stt.startStream({ vocabulary: words });
+    return {
+      push: (samples: Int16Array) => stream.push(samples),
+      finish: () => stream.finish(),
+      cancel: () => (stream.cancel ? stream.cancel() : void stream.finish().catch(() => {})),
+    };
+  };
 
-  // What was said and done in the last few minutes, so "now type this in it" knows what "it" is.
-  const memory = new AgentMemory();
-  const commands = platform.commands;
-  const command =
-    commands && engines.decider && engines.writer
-      ? {
-          // The OS's own actions first; the screen only for what they cannot do (docs/command-mode.md).
-          sources: [
-            commands,
-            ...(platform.screen
-              ? [screenSource(platform.screen, engines.decider, engines.writer, (line) => console.log(line))]
-              : []),
-          ],
-          decider: engines.decider,
-          writer: engines.writer,
-        }
-      : null;
-
+  let muteTimer: NodeJS.Timeout | undefined;
+  let live = false;
   const dictation = new DictationController(
     pill,
-    pillMic,
+    mic,
     createWorkflow({
       pipeline,
-      problems: engines.problems,
-      settings,
       context: platform.context,
       history,
       saveRecording,
-      newId: randomUUID,
-      // Show the words as heard while the model is still cleaning them up.
       onHeard: (text) => pill.setState({ kind: "processing", message: text }),
+      onPartial: (text) => dictation.heard(text),
       signedIn: async () => (await account.state()).signedIn,
-      userName: async () => (await account.state()).name || undefined,
-      // "Writing an email…" is a very different wait from "formatting what you said".
-      onIntent: (intent) => {
-        if (intent !== "dictation") {
-          pill.setState({ kind: "processing", message: `Writing your ${intent}…` });
-        }
-      },
       remainingSeconds: async () => (await account.usage())?.remaining ?? null,
-      warmCommands: () => commands?.warm?.(),
-      command: command
-        ? (said) =>
-            runCommand(said, {
-              decider: command.decider,
-              writer: command.writer,
-              sources: command.sources,
-              memory,
-              // The pill says what is about to happen before it happens.
-              onEvent: (event) => {
-                if (event.kind !== "thinking") pill.setState({ kind: "processing", message: event.what });
-              },
-              log: (line) => console.log(line),
-            })
-        : undefined,
       onHistoryChanged: notifyHistoryChanged,
+      onPasted: (text, app) => void learner.pasted(text, app),
       log: (line) => console.log(line),
+      ...(follow ? { listen: listenForCommand, follow: (said: string) => follow.said(said) } : {}),
     }),
+    {
+      // Read per dictation, so a change in Settings applies to the next one. The muting waits for
+      // the start sound, which would otherwise be muted with everything else.
+      alert: () => {
+        void settings.all().then(({ sounds }) => {
+          if (sounds) platform.feedback?.cue("notice");
+        });
+      },
+      listening: (on) => {
+        live = on;
+        // A new dictation is the user moving on: what they fixed in the last paste is final.
+        if (on) {
+          void learner.settle();
+          platform.inserter.prepare?.();
+        }
+        platform.hotkey.watchEscape?.(on);
+        clearTimeout(muteTimer);
+        void settings.all().then(({ sounds, muteAudio }) => {
+          const feedback = platform.feedback;
+          // A quick tap can end before its settings arrive; then this one is stale.
+          if (!feedback || on !== live) return;
+          if (on) {
+            if (sounds) feedback.cue("start");
+            if (muteAudio)
+              muteTimer = setTimeout(
+                () => {
+                  if (live) feedback.muteOutput(true);
+                },
+                sounds ? 180 : 0,
+              );
+          } else {
+            feedback.muteOutput(false);
+            if (sounds) feedback.cue("stop");
+          }
+        });
+      },
+    },
   );
 
-  ipcMain.handle(IPC.settingsGet, () => settings.all());
-  ipcMain.handle(IPC.settingsSet, async (_event, patch: unknown) => {
-    const next = await settings.update(assertSettings(patch, (keys) => platform.hotkey.accepts(keys)));
+  // Locked: no dictation and no pill until the user is back (see DictationController.setLocked).
+  const setLocked = (locked: boolean) => {
+    dictation.setLocked(locked);
+    pill.setScreenLocked(locked);
+  };
+  powerMonitor.on("lock-screen", () => setLocked(true));
+  powerMonitor.on("unlock-screen", () => setLocked(false));
+
+  handle(IPC.voiceSettingsGet, () => voice.current());
+  handle(IPC.voiceSettingsSet, (_event, patch: unknown) => {
+    // Shape-checked by the server, which owns the rules; only an object is let through here.
+    if (typeof patch !== "object" || patch === null || Array.isArray(patch)) throw new Error("Bad settings.");
+    return voice.update(patch as Partial<VoiceSettings>);
+  });
+  handle(IPC.voiceLanguages, () => backend.languages().catch(() => []));
+  handle(IPC.settingsGet, () => settings.all());
+  handle(IPC.settingsSet, (_event, patch: unknown) =>
+    changeSettings(assertSettings(patch, (keys) => platform.hotkey.accepts(keys))),
+  );
+  /** A change from Settings or from the menu bar: stored, applied, and told to every window. */
+  const changeSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
+    const next = await settings.update(patch);
     applyLaunchAtLogin(next.launchAtLogin);
+    platform.microphone?.use?.(next.microphoneId);
+    platform.microphone?.cleanup?.(next.voiceCleanup);
+    pill.setIdleVisible(next.pillWhenIdle);
+    pill.setPosition(next.pillPosition);
+    void pruneHistory();
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(IPC.settingsChanged, next);
     }
     await registerHotkey();
     return next;
-  });
-  ipcMain.handle(IPC.updateState, () => updateState());
-  ipcMain.handle(IPC.updateCheck, () => checkForUpdate());
-  ipcMain.on(IPC.updateInstall, () => installUpdate());
+  };
+  handle(IPC.updateState, () => updateState());
+  handle(IPC.updateCheck, () => checkForUpdate());
+  listen(IPC.updateInstall, () => installUpdate());
+  // The demo build never updates: the feed holds 0.4.3, which would replace it (plan D1).
   startUpdater((state) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(IPC.updateChanged, state);
     }
-  }, app.isPackaged);
+  }, viaBackend());
 
-  ipcMain.handle(IPC.microphoneList, () => microphones);
-  ipcMain.on(IPC.microphonePublish, (_event, options: unknown) => {
+  // The native microphone records from the device the user picked ("" follows the Mac's default).
+  const { microphoneId, voiceCleanup } = await settings.all();
+  platform.microphone?.use?.(microphoneId);
+  platform.microphone?.cleanup?.(voiceCleanup);
+  handle(IPC.micDevices, () => platform.microphone?.devices?.() ?? []);
+  listen(IPC.micMeter, (event, on: unknown) => {
+    const sender = event.sender;
+    const meter = platform.microphone?.meter;
+    if (!meter) return;
+    meter.call(platform.microphone, on === true, (level) => {
+      if (!sender.isDestroyed()) sender.send(IPC.micMeterLevel, level);
+    });
+    // A window closed with the picker open must not leave the microphone on.
+    if (on === true) sender.once("destroyed", () => meter.call(platform.microphone, false, () => {}));
+  });
+  handle(IPC.microphoneList, () => microphones);
+  listen(IPC.microphonePublish, (_event, options: unknown) => {
     microphones = Array.isArray(options)
       ? options
           .filter((item): item is MicrophoneOption => !!item && typeof item.id === "string")
@@ -456,28 +765,97 @@ async function start(): Promise<void> {
       : [];
   });
 
-  ipcMain.on(IPC.pillHover, (event, inside: unknown) => {
+  listen(IPC.assistantReply, (event, value: unknown) => {
+    if (!pill.owns(event.sender)) return;
+    const reply = parseReply(value);
+    if (reply) follow?.reply(reply);
+  });
+  listen(IPC.pillHover, (event, inside: unknown) => {
     if (pill.owns(event.sender)) pill.setHover(inside === true);
   });
-  ipcMain.on(IPC.pillClick, (event) => {
-    if (pill.owns(event.sender)) openMainWindow();
+  listen(IPC.pillPress, (event) => {
+    if (pill.owns(event.sender)) pill.pressed();
   });
-  ipcMain.on(IPC.micChunk, (event, samples: Int16Array) => {
+  listen(IPC.pillRelease, (event) => {
+    if (pill.owns(event.sender)) void pillReleased();
+  });
+  listen(IPC.pillArea, (event, size: unknown) => {
+    if (!pill.owns(event.sender) || !isSize(size)) return;
+    pill.setSize(size);
+  });
+  // The helper catches the pill's presses so they never activate the app; same handling after.
+  if (platform.clickCatcher) {
+    pill.attachClickCatcher(platform.clickCatcher);
+    platform.clickCatcher.onButton((down) => {
+      if (down) pill.pressed();
+      else void pillReleased();
+    });
+  }
+
+  async function pillReleased(): Promise<void> {
+    const result = pill.released();
+    if (!result) return;
+    if (!result.click) {
+      // Saved like any other setting, so Settings and the pill's own alignment hear of it.
+      const next = await settings.update({ pillPosition: result.place });
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.settingsChanged, next);
+      return;
+    }
+    // A click means what the pill is showing: Undo for a learned word, Copy for words with
+    // nowhere to go, and otherwise "open the app".
+    const kind = pill.currentKind();
+    if (kind === "learned") await undoLearned();
+    else if (kind === "unplaced") await copyUnplaced();
+    else openMainWindow();
+  }
+  listen(IPC.pillDemo, (event, state: unknown) => {
+    // From the main window only, and only the states Settings previews.
+    if (pill.owns(event.sender) || !isDemoState(state)) return;
+    dictation.demo(state);
+  });
+
+  async function copyUnplaced(): Promise<void> {
+    const text = pill.unplacedText();
+    // A demo from Settings has no words of the user's: the clipboard is left as it is.
+    if (text) await clipboard.writeText(text);
+    dictation.confirm("Copied · paste with ⌘V");
+  }
+
+  async function undoLearned(): Promise<void> {
+    const words = pill.learnedWords();
+    dictation.dismiss();
+    for (const word of words) {
+      await dictionary.remove(word);
+      await learner.removed(word);
+    }
+    if (words.length > 0) void voice.pushDictionary();
+  }
+  listen(IPC.micChunk, (event, samples: Int16Array) => {
     if (pill.owns(event.sender)) pillMic.receive(samples);
   });
-  ipcMain.on(IPC.micStopped, (event) => {
+  listen(IPC.micStopped, (event) => {
     if (pill.owns(event.sender)) pillMic.stopped();
   });
-  ipcMain.on(IPC.micError, (event, message: string) => {
+  listen(IPC.micError, (event, message: string) => {
     if (pill.owns(event.sender)) pillMic.failed(String(message));
   });
 
   let hotkeyRetry: NodeJS.Timeout | undefined;
+  /** "Pause dictation" in the menu bar: the hotkey is let go until resumed (or the app restarts). */
+  let paused = false;
   const registerHotkey = async (): Promise<void> => {
     // One retry loop at most, even when a settings change re-registers while a retry is pending.
     clearTimeout(hotkeyRetry);
+    if (paused) {
+      await platform.hotkey.unregisterAll().catch(() => {});
+      return;
+    }
     await platform.hotkey
-      .register(await bindings(), (event) => dictation.handleHotkey(event))
+      .register(await bindings(), (event) => {
+        // A run in progress holds its next step for what the user is about to say (S-024).
+        if (event.type === "pressed" && event.mode === "command") follow?.hold();
+        dictation.handleHotkey(event);
+      })
       .catch((error: unknown) => {
         // Missing permission: keep trying, so the hotkey starts working as soon as it is granted.
         if (error instanceof SubxError && error.code === "permission_denied") {
@@ -489,19 +867,115 @@ async function start(): Promise<void> {
   };
   void registerHotkey();
 
-  tray = createTray(openMainWindow);
-  // Started by Windows at login, the app belongs in the tray with the pill on screen — not in
-  // front of whatever the user was actually opening.
+  // Settings records the dictation hotkey here, with the platform's own poll (see Hotkey.record).
+  // The watch stops meanwhile: holding today's hotkey to record it again started a dictation.
+  let recording: { cancel(): void } | null = null;
+  handle(IPC.hotkeyRecord, async (event) => {
+    const record = platform.hotkey.record?.bind(platform.hotkey);
+    if (!record) return null;
+    recording?.cancel();
+    await platform.hotkey.unregisterAll().catch(() => {});
+    const sender = event.sender;
+    const session = record((keys) => {
+      if (!sender.isDestroyed()) sender.send(IPC.hotkeyHeld, keys);
+    });
+    recording = session;
+    // A window closed mid-recording must not leave the hotkey off.
+    sender.once("destroyed", () => session.cancel());
+    try {
+      const keys = await session.done;
+      if (!keys) return null;
+      const refused = hotkeyRefusal(keys, (k) => platform.hotkey.accepts(k), COMMAND_KEYS);
+      return refused ? { refused } : { keys };
+    } finally {
+      if (recording === session) recording = null;
+      await registerHotkey();
+    }
+  });
+  listen(IPC.hotkeyRecordCancel, () => recording?.cancel());
+
+  tray = createTray(
+    async () => {
+      const [state, records, chosen, hotkey] = await Promise.all([
+        account.state(),
+        history.recent(Number.MAX_SAFE_INTEGER),
+        settings.all(),
+        bindings(),
+      ]);
+      // The same daily totals as Home, so the menu and the window never disagree (this line used to
+      // count the history's words its own way, splitting on spaces: a "—" was a word, a Japanese
+      // sentence was one, and deleted dictations dropped out).
+      const days: Record<string, DayTotal> = await totals.days().catch(() => ({}));
+      const today = days[dayKey(Date.now())];
+      return {
+        signedIn: state.signedIn,
+        name: state.name,
+        today: { dictations: today?.dictations ?? 0, words: today?.words ?? 0 },
+        hotkey: hotkey[0]?.keys ?? "",
+        // Asked of the helper each time: AirPods and iPhones come and go.
+        microphones: platform.microphone?.devices
+          ? await platform.microphone.devices().catch(() => [])
+          : null,
+        microphoneId: chosen.microphoneId,
+        languages: (await voice.current().catch(() => null))?.languages ?? null,
+        paused,
+        last: records.find((record) => record.finalText)?.finalText ?? null,
+      };
+    },
+    {
+      open: () => openMainWindow(),
+      openSettings: (tab) => openMainWindow({ page: "settings", tab }),
+      useMicrophone: (id) => void changeSettings({ microphoneId: id }),
+      setHinglish: (on) => {
+        void voice.current().then((current) => {
+          if (current) return voice.update({ languages: { ...current.languages, hinglish: on } });
+        });
+      },
+      setPaused: (next) => {
+        paused = next;
+        void registerHotkey();
+      },
+      copyLast: () => {
+        void history.recent(1).then(([record]) => {
+          if (record?.finalText) clipboard.writeText(record.finalText);
+        });
+      },
+      checkForUpdates: () => {
+        openMainWindow({ page: "settings", tab: "about" });
+        void checkForUpdate();
+      },
+    },
+  );
+  // Started at login, the app belongs in the menu bar with the pill on screen — not in front of
+  // whatever the user was actually opening.
   if (!startedHidden()) openMainWindow();
 }
 
+/**
+ * Our windows show only our own pages (ownPage). A link, a script or a dropped file that tried to
+ * load anything else would hand it the preload bridge, so such a navigation is stopped and, if it
+ * is a web page, opened in the browser instead.
+ */
+app.on("web-contents-created", (_event, contents) => {
+  const toBrowser = (url: string) => {
+    if (/^https:\/\//.test(url)) void shell.openExternal(url);
+  };
+  contents.setWindowOpenHandler(({ url }) => {
+    toBrowser(url);
+    return { action: "deny" };
+  });
+  contents.on("will-navigate", (event, url) => {
+    if (ownPage(url)) return;
+    event.preventDefault();
+    toBrowser(url);
+  });
+});
+
 app.whenReady().then(() => {
-  // Windows draws the menu inside our own window, where File/Edit/View belongs to no feature this
-  // app has.
-  Menu.setApplicationMenu(null);
   // A swallowed startup failure looks exactly like a window that never opens, which is not a
   // thing anyone can debug from the outside.
   start().catch((error) => console.error("SUBXVoice failed to start:", error));
+  app.on("activate", () => openMainWindow());
 });
 
 // Someone tried to open a second copy — almost always a double-click on the shortcut while the
@@ -510,7 +984,19 @@ app.on("second-instance", () => openMainWindow());
 
 app.on("will-quit", () => {
   tray?.destroy();
-  // Its PowerShell would otherwise outlive the app.
-  platform.commands?.dispose?.();
   void platform.hotkey.unregisterAll();
 });
+
+function isDemoState(value: unknown): value is PillState {
+  const state = value as Partial<PillState> | null;
+  if (!state || typeof state.kind !== "string") return false;
+  const texts = Object.values(state).every((field) => typeof field !== "string" || field.length <= 200);
+  return (
+    texts && ["idle", "listening", "processing", "done", "error", "learned", "unplaced"].includes(state.kind)
+  );
+}
+
+function isSize(value: unknown): value is { width: number; height: number } {
+  const size = value as Record<string, unknown> | null;
+  return !!size && Number.isFinite(size.width) && Number.isFinite(size.height);
+}

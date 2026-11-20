@@ -22,6 +22,19 @@ nsis:
   oneClick: true
   perMachine: false
 
+# Electron's switches in the shipped app (from the Mac app, 2026-11-19). The app holds the
+# microphone and drives the keyboard and screen, so nothing else may run code as it: no
+# ELECTRON_RUN_AS_NODE (which also leaked in from VS Code terminals and made the installed exe
+# exit at once), no NODE_OPTIONS, no --inspect, and only the app's own archive is loaded.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  # app.asar is checked against the hash electron-builder stores in the exe at launch, so the archive
+  # cannot be swapped under an installed copy (the server's APP-UPDATES security audit, 2026-11-20).
+  enableEmbeddedAsarIntegrityValidation: true
+
 # Installers are published to a separate PUBLIC repo so the source can stay private: a private
 # repo's release assets 404 for anonymous downloads, which would break both the website's download
 # button and every auto-update check.

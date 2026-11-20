@@ -1,215 +1,202 @@
-import type { SessionRecord } from "@subx/core";
-import { AudioButton } from "../shared/AudioButton";
-import { FOLLOW_EXAMPLES } from "../shared/follow";
-import { DAY_MS, formatCount, formatDuration, formatSpan, formatTime, streakDays } from "../shared/format";
-import { HistoryRow } from "../shared/HistoryRow";
-import { useHistory, usePermissions } from "../shared/hooks";
+import type { DictionaryEntry } from "@subx/core";
+import { useEffect, useState } from "react";
+import { formatCount, formatSpan } from "../shared/format";
+import { HistoryList } from "../shared/HistoryList";
+import { useDayTotals, useHistory, usePermissions } from "../shared/hooks";
+import { BookIcon, CheckIcon, MicIcon, PaletteIcon, ShieldIcon } from "../shared/icons";
 import type { PageId } from "../shared/Sidebar";
-import {
-  hasDevanagari,
-  speakingMs,
-  timeSavedMs,
-  totalWords,
-  wordCount,
-  wordsPerMinute,
-} from "../shared/stats";
-import { Button, CopyButton, Empty, Figure, Figures, Notice, Section, TextAction } from "../shared/ui";
-import { VoiceStrip } from "../shared/VoiceStrip";
+import { savedMsOf, speedOf, streakOfTotals, sumTotals } from "../shared/stats";
+import { hasChosenLook } from "../shared/themes";
+import { Button, Notice } from "../shared/ui";
 
-const RECENT_COUNT = 6;
-
-/** A streak of one is today — saying "start one" under it reads as a bug. */
-function streakNote(streak: number): string {
-  if (streak === 0) return "Dictate today to start one";
-  if (streak === 1) return "Come back tomorrow to build it";
-  return "Keep it going";
-}
-
+/**
+ * Home: what you have done in four numbers, the few things left to
+ * set up, and then everything you have said. Each thing appears once — the charts live in
+ * Insights, the history lives here.
+ */
 export function DashboardPage({
   hotkey,
-  followKey,
   onNavigate,
 }: {
   hotkey: string;
-  /** The Follow My Words key; absent where it cannot run, and the page is then dictation only. */
-  followKey?: string;
   onNavigate: (page: PageId) => void;
 }) {
   const records = useHistory();
+  const days = useDayTotals();
   const permissions = usePermissions();
-  if (!records) return null;
+  const [words, setWords] = useState<DictionaryEntry[] | null>(null);
+  useEffect(() => void window.subx.dictionary.list().then(setWords), []);
+  if (!records || !days) return null;
 
-  // "unknown" (a state Windows could not read) is not treated as missing.
-  const missingPermission = permissions?.some(
-    (permission) => permission.state === "denied" || permission.state === "not_asked",
-  );
-  const week = records.filter((record) => record.createdAt >= Date.now() - 7 * DAY_MS);
-  const streak = streakDays(records);
-  const latest = records[0];
+  // "unknown" (e.g. Input Monitoring, which Electron can't read) is not treated as missing.
+  const missing = permissions?.some((item) => item.state === "denied" || item.state === "not_asked") ?? false;
+  // From the daily totals, which keep counting what was said after a dictation is deleted.
+  const total = sumTotals(days);
+  const streak = streakOfTotals(days);
+  const speed = speedOf(total);
 
   return (
     <div className="space-y-10">
-      {missingPermission && (
+      {missing && (
         <Notice role="alert">
           <div className="flex items-center justify-between gap-4">
-            <p>SUBXVoice needs microphone access before it can type for you.</p>
-            <Button variant="primary" onClick={() => onNavigate("settings")}>
+            <p>SUBXVoice needs a permission before it can type for you.</p>
+            <Button variant="primary" onClick={() => openSettings("permissions", onNavigate)}>
               Review permissions
             </Button>
           </div>
         </Notice>
       )}
 
-      {followKey && <FollowPanel keys={followKey} />}
-
-      {latest ? <LastDictation record={latest} /> : <FirstRun hotkey={hotkey} />}
-
-      <Figures>
-        <Figure
-          label="Words this week"
-          value={formatCount(totalWords(week))}
-          note={`${week.length} ${week.length === 1 ? "dictation" : "dictations"}`}
-        />
-        <Figure
-          label="Time saved"
-          value={formatSpan(timeSavedMs(records))}
-          note="Against typing at 40 wpm"
-          mark
-        />
-        <Figure
-          label="Speaking rate"
-          value={wordsPerMinute(records) ? String(wordsPerMinute(records)) : "—"}
-          unit={wordsPerMinute(records) ? "wpm" : undefined}
-          note={`${formatDuration(speakingMs(records))} of speech in total`}
-        />
-        <Figure
-          label="Streak"
-          value={streak ? String(streak) : "—"}
-          unit={streak ? (streak === 1 ? "day" : "days") : undefined}
-          note={streakNote(streak)}
-        />
-      </Figures>
-
-      <Section
-        title="Speaking time, last two weeks"
-        action={<TextAction onClick={() => onNavigate("insights")}>More insights</TextAction>}
+      <section
+        aria-label="Your numbers"
+        className="grid grid-cols-2 gap-y-5 rounded-[18px] border border-rule bg-paper px-7 py-6 md:grid-cols-4"
       >
-        <VoiceStrip records={records} />
-      </Section>
+        <Stat
+          label="Dictated words"
+          value={formatCount(total.words)}
+          unit={total.words === 1 ? "word" : "words"}
+        />
+        <Stat label="Time saved" value={formatSpan(savedMsOf(total))} />
+        <Stat label="Day streak" value={String(streak)} unit={streak === 1 ? "day" : "days"} />
+        <Stat label="Average speed" value={speed ? String(speed) : "—"} unit={speed ? "wpm" : undefined} />
+      </section>
 
-      <Section
-        title="Recent"
-        action={
-          records.length > RECENT_COUNT ? (
-            <TextAction onClick={() => onNavigate("history")}>See all {records.length}</TextAction>
-          ) : undefined
-        }
-      >
-        {records.length === 0 ? (
-          <Empty>Hold {hotkey} in any app and start talking.</Empty>
-        ) : (
-          <ul className="divide-y divide-rule">
-            {records.slice(0, RECENT_COUNT).map((record) => (
-              <HistoryRow key={record.id} record={record} />
-            ))}
-          </ul>
-        )}
-      </Section>
+      <LearningCenter
+        hotkey={hotkey}
+        steps={{
+          permissions: !missing && permissions !== null,
+          dictation: records.length > 0,
+          word: (words?.length ?? 0) > 0,
+          look: hasChosenLook(),
+        }}
+        onNavigate={onNavigate}
+      />
+
+      <HistoryList records={records} hotkey={hotkey} />
     </div>
   );
 }
 
+function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-ink-soft">{label}</p>
+      <p className="figure mt-1.5 text-[28px]">
+        {value}
+        {unit && <span className="ml-1.5 font-sans text-[14px] font-normal text-ink-soft">{unit}</span>}
+      </p>
+    </div>
+  );
+}
+
+/** Settings opens on the section that was last open; this points it at the one a task needs. */
+export function openSettings(tab: string, onNavigate: (page: PageId) => void) {
+  try {
+    localStorage.setItem("subx.settings.tab", tab);
+  } catch {
+    // It opens on the last section instead.
+  }
+  onNavigate("settings");
+}
+
 /**
- * The hero, and the only place the whole pipeline is visible: what the microphone heard, and what
- * was actually typed. The two differ on almost every Hindi dictation, and that difference is the
- * product — so it gets the space rather than another counter. Same shape as the website's hero:
- * the heard line in DM Mono, the typed one on a Marigold edge.
+ * The first things worth doing. Each is checked off from
+ * what the app can see (a dictation exists, a word was added), never from a click on the card, so
+ * a tick means it really happened. Gone once all are done.
  */
-function LastDictation({ record }: { record: SessionRecord }) {
-  const changed = Boolean(record.rawText) && record.rawText !== record.finalText;
+function LearningCenter({
+  hotkey,
+  steps,
+  onNavigate,
+}: {
+  hotkey: string;
+  steps: { permissions: boolean; dictation: boolean; word: boolean; look: boolean };
+  onNavigate: (page: PageId) => void;
+}) {
+  const tasks = [
+    {
+      done: steps.permissions,
+      title: "Allow access",
+      // Windows asks only for the microphone (platform-win permissions.ts).
+      body: "Your microphone, so SUBXVoice can hear you.",
+      go: () => openSettings("permissions", onNavigate),
+      icon: ShieldIcon,
+    },
+    {
+      done: steps.dictation,
+      title: "Your first dictation",
+      body: `Hold ${hotkey} in any app, talk, let go.`,
+      icon: MicIcon,
+    },
+    {
+      done: steps.word,
+      title: "Add a personal word",
+      body: "A name or term SUBXVoice should spell your way.",
+      go: () => onNavigate("dictionary"),
+      icon: BookIcon,
+    },
+    {
+      done: steps.look,
+      title: "Make it yours",
+      body: "Pick a theme and a font.",
+      go: () => openSettings("appearance", onNavigate),
+      icon: PaletteIcon,
+    },
+  ];
+  const left = tasks.filter((task) => !task.done).length;
+  if (left === 0) return null;
+  const first = tasks.find((task) => !task.done);
 
   return (
-    <section>
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <AudioButton id={record.id} />
-          <div>
-            <p className="font-semibold">Last dictation</p>
-            <p className="figure-num text-xs text-ink-soft">
-              {formatTime(record.createdAt)}
-              {record.context.appName ? ` into ${record.context.appName}` : ""}
-              {`, ${formatDuration(record.audioMs ?? 0)}, ${wordCount(record.finalText)} words`}
-            </p>
-          </div>
+    // Four boxes in a row only where each has room: at 1000 px they were ~110 px wide and their
+    // words broke a line at a time (2026-11-20). Narrower, two by two under the text; widest, the
+    // text beside them.
+    <section className="grid gap-3 rounded-[18px] bg-well p-3 sm:grid-cols-2 min-[1000px]:grid-cols-4 min-[1150px]:grid-cols-[220px_repeat(4,minmax(0,1fr))]">
+      <div className="flex flex-col justify-between gap-4 p-3 sm:col-span-2 min-[1000px]:col-span-4 min-[1150px]:col-span-1">
+        <div>
+          <p className="text-ink-soft">
+            {left} {left === 1 ? "thing" : "things"} left
+          </p>
+          <p className="mt-2 text-[16px] leading-snug">Set these up to get the most out of SUBXVoice.</p>
         </div>
-        <CopyButton text={record.finalText} />
-      </div>
-
-      <div className={changed ? "grid gap-6 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]" : ""}>
-        {changed && (
-          <div className="md:pt-1">
-            <p className="mb-2 text-xs text-ink-faint">
-              {hasDevanagari(record.rawText) ? "Heard in Devanagari" : "Heard as"}
-            </p>
-            <p className="spoken max-h-48 overflow-y-auto">{record.rawText}</p>
-          </div>
+        {first?.go && (
+          <Button variant="primary" onClick={first.go} className="self-start">
+            Get started
+          </Button>
         )}
-        <div className="border-l-[3px] border-marigold bg-paper px-5 py-4">
-          {changed && <p className="mb-2 text-xs text-ink-faint">Typed</p>}
-          {record.finalText ? (
-            <p className="voice-text max-h-56 max-w-[60ch] overflow-y-auto text-[20px] leading-[1.45] text-ink">
-              {record.finalText}
-            </p>
-          ) : (
-            <p className="text-ink-soft">
-              No text came back. Check that speech-to-text is ready in Settings.
-            </p>
-          )}
-        </div>
       </div>
-    </section>
-  );
-}
-
-function FirstRun({ hotkey }: { hotkey: string }) {
-  return (
-    <section className="border-l-[3px] border-marigold bg-paper px-6 py-7">
-      <h2 className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[24px]">
-        To type instead, hold <kbd className="kbd text-[15px]">{hotkey}</kbd>
-      </h2>
-      <p className="mt-3 max-w-[52ch] text-[14px] leading-relaxed text-ink-soft">
-        Speak Hindi, English, or both in one sentence. The text lands wherever your cursor is, and every
-        recording stays on this computer.
-      </p>
-    </section>
-  );
-}
-
-/**
- * Follow My Words leads the dashboard, on the one dark panel in the content area — the same
- * Aubergine as the sidebar and as the website's Follow My Words section. Requests are not kept in
- * history, so this shows what to say rather than what was said.
- */
-function FollowPanel({ keys }: { keys: string }) {
-  return (
-    <section className="bg-side px-7 py-7 text-side-ink">
-      <h2 className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[28px]">
-        Follow My Words
-        <kbd className="kbd border-side-rule bg-side-rule text-[15px] text-side-ink">{keys}</kbd>
-      </h2>
-      <p className="mt-3 max-w-[60ch] text-[14px] leading-relaxed text-side-soft">
-        Hold {keys} while you work and say what you need done, in Hindi, English or both. It does it in front
-        of you, and the pill says what it did. Messages are typed into the chat and left for you to send.
-      </p>
-      <p className="mt-6 text-xs text-side-soft">Try saying</p>
-      <ul className="mt-2 grid gap-px bg-side-rule sm:grid-cols-2">
-        {FOLLOW_EXAMPLES.map((example) => (
-          <li key={example.say} className="bg-side py-3 pr-4">
-            <span className="block text-xs text-marigold">{example.kind}</span>
-            <span className="spoken mt-1 block text-[15px] text-side-ink">“{example.say}”</span>
-          </li>
-        ))}
-      </ul>
+      {tasks.map((task, index) => {
+        const Icon = task.icon;
+        const body = (
+          <>
+            <span className="flex items-center justify-between text-ink-faint">
+              <span className="figure-num text-[13px]">{String(index + 1).padStart(2, "0")}</span>
+              <span
+                className={`grid h-5 w-5 place-items-center rounded-full ${
+                  task.done ? "bg-accent text-on-accent" : "border border-rule-strong"
+                }`}
+              >
+                {task.done && <CheckIcon className="h-3 w-3" />}
+                <span className="sr-only">{task.done ? "Done" : "Not done yet"}</span>
+              </span>
+            </span>
+            <Icon className="mt-5 h-5 w-5 text-ink-soft" />
+            <span className={`mt-3 block font-medium ${task.done ? "text-ink-soft" : ""}`}>{task.title}</span>
+            <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{task.body}</span>
+          </>
+        );
+        const card = "block rounded-[14px] bg-paper p-4 text-left";
+        return task.go && !task.done ? (
+          <button key={task.title} type="button" onClick={task.go} className={`${card} hover:shadow-sm`}>
+            {body}
+          </button>
+        ) : (
+          <div key={task.title} className={card}>
+            {body}
+          </div>
+        );
+      })}
     </section>
   );
 }

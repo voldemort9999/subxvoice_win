@@ -29,3 +29,4 @@ context/
 docs/
 CLAUDE.md
 AGENTS.md
+packages/assistant/bench/results/

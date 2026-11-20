@@ -1,3 +1,4 @@
+import type { Microphone } from "@subx/core";
 import type { PillWindow } from "./pill";
 
 const PILL_FLUSH_TIMEOUT_MS = 1000;
@@ -9,8 +10,18 @@ export interface MicSource {
   stop(): Promise<void>;
 }
 
+/** The OS's native microphone plug (e.g. the Swift helper on Mac). */
+export function nativeMic(microphone: Microphone): MicSource {
+  return {
+    start: (onChunk) => microphone.start(onChunk),
+    stop: async () => {
+      await microphone.stop();
+    },
+  };
+}
+
 /**
- * Records through Web Audio inside the pill window. Its chunks arrive over IPC, and the
+ * Fallback: records through Web Audio inside the pill window. Its chunks arrive over IPC, and the
  * owner must forward them with `receive()` and `stopped()`.
  */
 export class PillMic implements MicSource {

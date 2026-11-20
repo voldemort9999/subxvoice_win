@@ -2,15 +2,15 @@
 
 /*
  * The pill floats over every other application, light or dark, so it does not follow the
- * window's theme: it is always the Aubergine plate of the app mark, with Silver on it and
- * Marigold for the one thing that is happening now.
+ * window: it is always the soft-black plate of the app mark, with cream on it and the brighter
+ * ultramarine for the one thing that is happening now (the darker one is unreadable on black).
  */
 @theme {
-  --color-plate: #3a0f34;
-  --color-silver: #dde3e8;
-  --color-marigold: #eaaa00;
-  --font-sans: "Archivo Variable", "Noto Sans Devanagari Variable", system-ui, sans-serif;
-  --font-mono: "DM Mono", "Noto Sans Devanagari Variable", ui-monospace, monospace;
+  --color-soot: #161412;
+  --color-cream: #f2e8c8;
+  --color-accent: #5f72ff;
+  --font-sans: "Geist Variable", "Noto Sans Devanagari Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Noto Sans Devanagari Variable", ui-monospace, monospace;
 }
 
 html,
@@ -26,5 +26,55 @@ body {
   * {
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every animation */
     animation: none !important;
+  }
+}
+
+/* The pill's own motion, here too so the preview in Settings moves like the real one. */
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@keyframes pill-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* The mark's motion (shared/MotionMark.tsx): the wave breathes, the underscore blinks. */
+@keyframes motion-mark-breathe {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+@keyframes motion-mark-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.12;
+  }
+}
+.motion-mark-wave {
+  animation: motion-mark-breathe 1.3s ease-in-out infinite;
+}
+.motion-mark-cursor {
+  animation: motion-mark-blink 1.1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-mark-wave,
+  .motion-mark-cursor {
+    animation: none;
   }
 }

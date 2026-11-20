@@ -1,0 +1,20 @@
+# Demo installer (plan D1, `pnpm dist:demo`): its own app beside the released SUBXVoice, never
+# a replacement for it. A separate appId gives it its own uninstall entry; the install folder
+# comes from the package *name* (Programs\@subxdesktop for both, until the name below — the
+# first demo install overwrote 0.4.3's files that way, 2026-11-19); the productName in the app's
+# package.json gives it its own userData, so its own settings, sign-in and single-instance lock. The exe keeps the name SUBXVoice.exe because the assistant
+# recognises its own windows by that program name (platform-win commands.ts OWN_PROGRAMS).
+# Nothing is published: no publish config, and the updater is off in this build (src/main/demo.ts).
+extends: ./electron-builder.yml
+appId: com.subxvoice.demo
+productName: SUBXVoice Demo
+executableName: SUBXVoice
+extraMetadata:
+  name: subxvoice-demo
+  productName: SUBXVoice Demo
+  version: 0.5.0-demo
+directories:
+  output: dist/demo
+win:
+  artifactName: SUBXVoice-Demo-setup.${ext}
+publish: null

@@ -4,11 +4,14 @@ import type {
   AccountState,
   AppInfo,
   AppSettings,
+  DayTotal,
   MicrophoneOption,
   PermissionStatus,
   UpdateState,
   Usage,
+  VoiceSettings,
 } from "../../../shared/ipc";
+import { errorText } from "./errors";
 
 /** All recordings, newest first. `null` while loading. Refreshes when a new one is saved. */
 export function useHistory(): SessionRecord[] | null {
@@ -19,6 +22,17 @@ export function useHistory(): SessionRecord[] | null {
     return window.subx.history.onChanged(load);
   }, []);
   return records;
+}
+
+/** The daily totals (words, speaking time, dictations per day), re-read whenever the history changes. */
+export function useDayTotals(): Record<string, DayTotal> | null {
+  const [days, setDays] = useState<Record<string, DayTotal> | null>(null);
+  useEffect(() => {
+    const load = () => void window.subx.stats.days().then(setDays);
+    load();
+    return window.subx.history.onChanged(load);
+  }, []);
+  return days;
 }
 
 /** Version, current hotkey and engine status. Re-read when settings change (e.g. a new hotkey). */
@@ -95,40 +109,6 @@ export function useMicrophones(): MicrophoneOption[] {
   return options;
 }
 
-export type Theme = "dark" | "light";
-
-/**
- * A new key, not the old "subx.theme": the old default was dark and the app wrote it back on every
- * launch, so every existing install has "dark" stored without anyone having chosen it. Reading a
- * fresh key gives everyone the new default once; picking dark again is remembered as before.
- */
-const THEME_KEY = "subx.theme.v2";
-
-/**
- * Light by default, the same Ice Silver as the website (decided 2026-11-10, reversing S-009's
- * dark default). The choice is per machine, so it lives in localStorage rather than in settings.
- */
-export function useTheme(): [Theme, (theme: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
-    } catch {
-      return "light";
-    }
-  });
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // Private windows and cleared site data: the theme still applies for this run.
-    }
-  }, [theme]);
-
-  return [theme, setTheme];
-}
-
 /** Who is signed in. `null` while the main process is still restoring the saved session. */
 export function useAccount(): AccountState | null {
   const [state, setState] = useState<AccountState | null>(null);
@@ -148,4 +128,35 @@ export function useUsage(): Usage | null {
     return window.subx.history.onChanged(load);
   }, []);
   return usage;
+}
+
+/**
+ * The account's dictation settings on the server. `null` while loading, or when neither the server
+ * nor this Mac's copy has them (`problem` then says why).
+ */
+export function useVoiceSettings(): {
+  settings: VoiceSettings | null;
+  problem: string | null;
+  update: (patch: Partial<VoiceSettings>) => Promise<void>;
+} {
+  const [settings, setSettings] = useState<VoiceSettings | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    window.subx.voice
+      .settings()
+      .then((value) => {
+        if (value) setSettings(value);
+        else setProblem("Can't load your settings. Check your connection and try again.");
+      })
+      .catch((error: unknown) => setProblem(errorText(error)));
+  }, []);
+  const update = async (patch: Partial<VoiceSettings>) => {
+    try {
+      setSettings(await window.subx.voice.update(patch));
+      setProblem(null);
+    } catch (error) {
+      setProblem(errorText(error));
+    }
+  };
+  return { settings, problem, update };
 }

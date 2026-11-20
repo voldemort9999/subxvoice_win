@@ -1,45 +1,38 @@
 // The dictation workflow: one place that owns what happens between the key going down and the
 // text landing at the cursor.
 //
-//   key down ──► open STT stream ──► stream audio while speaking
-//   key up   ──► finalise STT ──► rules ──► router ──► LLM (script / style) ──► paste ──► history
+//   key down ──► open the server socket ──► stream audio while speaking
+//   key up   ──► the server finishes the text ──► your dictionary ──► paste ──► history
 //
 // The controller above it only knows about the hotkey, the pill and the microphone; the pipeline
 // below it only knows about plug-point interfaces. Everything app-specific — which settings apply,
 // what the pill says, where the audio file goes, what a failure reads like — lives here.
 import type {
-  AgentOutcome,
   AppContext,
   AudioClip,
   ContextReader,
-  Intent,
   Mode,
   Pipeline,
   SessionRecord,
+  Transcript,
 } from "@subx/core";
-import type { AppSettings } from "../shared/ipc";
 import type { DictationEngine, DictationRun } from "./dictation";
 
 export interface WorkflowDeps {
-  /** Null when no speech-to-text engine is configured; the workflow then just keeps the audio. */
-  pipeline: Pipeline | null;
-  /** Why an engine is missing, surfaced to the user instead of a silent no-op. */
-  problems: string[];
-  settings: { all(): Promise<AppSettings> };
+  pipeline: Pipeline;
   context: ContextReader;
   history: {
     save(record: SessionRecord): Promise<void>;
     attachAudio(id: string, audioPath: string, audioMs: number): Promise<void>;
   };
   saveRecording(clip: AudioClip): Promise<string>;
-  newId(): string;
-  /** Raw words as heard, shown while the model is still formatting them. */
+  /** The finished words, shown in the pill as they are pasted. */
   onHeard(text: string): void;
-  /** The signed-in account's display name, used to sign off a composed email. */
-  userName?(): Promise<string | undefined>;
-  /** Fired once the intent is known, so the pill can say what it is doing. */
-  onIntent?(intent: Intent): void;
+  /** Words recognised so far, while the user is still speaking. */
+  onPartial?(text: string): void;
   onHistoryChanged(): void;
+  /** The text is at the cursor, so whatever the user now fixes in it can be learned. */
+  onPasted?(text: string, app?: string): void;
   /** Whether an account is signed in. Dictation runs on its session, so without one it refuses. */
   signedIn?(): Promise<boolean>;
   /**
@@ -47,17 +40,16 @@ export interface WorkflowDeps {
    * not pay for a round trip it does not need.
    */
   remainingSeconds?(): Promise<number | null>;
-  /** Carries out what was said instead of typing it. Absent where command mode is not built. */
-  command?(said: string): Promise<AgentOutcome>;
-  /** Starts anything slow behind command mode, on key-down, while the user is still speaking. */
-  warmCommands?(): void;
   log?(line: string): void;
+  /** Hearing alone, for the command key: the same server socket, nothing pasted or recorded. */
+  listen?(): Promise<{ push(samples: Int16Array): void; finish(): Promise<Transcript>; cancel(): void }>;
+  /** Follow My Words: the assistant takes the words; returns the pill's acknowledgement. */
+  follow?(said: string): string;
 }
 
 export function createWorkflow(deps: WorkflowDeps): DictationEngine {
   return {
     async open(mode: Mode): Promise<DictationRun> {
-      // Settings are read per dictation, so changing the script takes effect on the next one.
       // Checked before the microphone opens: signing out must stop dictation, not merely make it
       // fail at the far end of a network call.
       if (deps.signedIn && !(await deps.signedIn().catch(() => false))) {
@@ -66,22 +58,20 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
 
       if (mode === "command") return openCommand(deps);
 
-      const settings = await deps.settings.all();
       const context = await deps.context.current().catch(() => ({}) as AppContext);
-
-      if (!deps.pipeline) return keepAudioOnly(deps, mode);
+      // The lock or login screen is in front: nothing is recorded there, even if the lock event
+      // was missed (it is the second guard; DictationController.setLocked is the first).
+      if (context.appId === "com.apple.loginwindow" || context.appName === "loginwindow") {
+        throw new Error("Unlock your PC to dictate.");
+      }
 
       // Opening here, on key-press, is what keeps release→paste short: the socket is already
       // warm and the words are recognised while the user is still speaking.
       let session: Awaited<ReturnType<Pipeline["open"]>>;
       try {
         session = await deps.pipeline.open(mode, context, {
-          script: settings.script,
           onTranscript: deps.onHeard,
-          emailTone: settings.emailTone,
-          messageTone: settings.messageTone,
-          userName: await deps.userName?.().catch(() => undefined),
-          onIntent: deps.onIntent,
+          ...(deps.onPartial ? { onPartial: deps.onPartial } : {}),
         });
       } catch (error) {
         throw await explain(deps, error);
@@ -96,61 +86,52 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
             deps.log?.("dictation: nothing heard");
             return { text: "Nothing heard" };
           }
-          if (outcome.kind === "command") {
-            deps.log?.(`dictation: command "${outcome.command}"`);
-            return { text: `Command: ${outcome.command}` };
-          }
-
           const { record } = outcome;
           deps.onHistoryChanged();
           // The text is already at the cursor; the recording is written afterwards so disk I/O
           // never sits on the user's critical path.
           void keepAudio(deps, clip, record.id);
-          deps.log?.(summarise(record, settings.script, outcome.pasteError));
+          deps.log?.(summarise(record, outcome.pasteError));
           // The transcript is saved either way; a failed paste is surfaced so the pill shows why
           // nothing appeared, rather than silently doing nothing.
           if (outcome.pasteError) throw new Error(outcome.pasteError);
+          // Not pasted anywhere, so there is no field to learn from.
+          if (outcome.nowhere) return { text: record.finalText, nowhere: true };
+          deps.onPasted?.(record.finalText, record.context.appName);
           return { text: record.finalText, warning: record.rewriteError };
         },
-        cancel: () => {
-          // Drain the stream so the socket closes rather than leaking; the result is discarded.
-          void session.finish().catch(() => {});
-        },
+        // Not finish(): that would type and record what was said, which is what cancel undoes.
+        cancel: () => session.cancel(),
       };
     },
   };
 }
 
 /**
- * The command key: the same warm stream as dictation, but the words are carried out rather than
- * typed. Nothing goes to history — a command is not something the user said for keeping.
+ * The command key: the words go to the assistant, whose run outlives this key press and answers
+ * through the capsule. The server's rewrite is for pasting; a command is read as it was heard
+ * (`raw`), so "WhatsApp par Priya ko hi bhejo" is never turned into a polished sentence first.
  */
 async function openCommand(deps: WorkflowDeps): Promise<DictationRun> {
-  const { pipeline, command } = deps;
-  if (!pipeline || !command) throw new Error("Commands aren't available on this computer");
-  deps.warmCommands?.();
-  let hearing: Awaited<ReturnType<Pipeline["listen"]>>;
+  const { listen, follow } = deps;
+  if (!listen || !follow) throw new Error("Follow My Words isn't available on this computer");
+  let hearing: Awaited<ReturnType<NonNullable<WorkflowDeps["listen"]>>>;
   try {
-    hearing = await pipeline.listen();
+    hearing = await listen();
   } catch (error) {
     throw await explain(deps, error);
   }
   return {
     push: (samples) => hearing.push(samples),
     finish: async () => {
-      const said = await hearing.finish();
+      const heard = await hearing.finish();
+      const said = (heard.raw ?? heard.text).trim();
       if (!said) return { text: "Nothing heard" };
       deps.onHeard(said);
       deps.log?.(`command: "${said}"`);
-      const outcome = await command(said);
-      deps.log?.(`command: ${outcome.ok ? "done" : "stopped"} — ${outcome.message}`);
-      // Shown as an error when nothing was done, so "I can't do that" never looks like success.
-      if (!outcome.ok) throw new Error(outcome.message);
-      return { text: outcome.message };
+      return { text: follow(said) };
     },
-    cancel: () => {
-      void hearing.finish().catch(() => {});
-    },
+    cancel: () => hearing.cancel(),
   };
 }
 
@@ -166,29 +147,6 @@ async function explain(deps: WorkflowDeps, error: unknown): Promise<unknown> {
   return error;
 }
 
-/** No speech-to-text configured: still record, so nothing the user said is thrown away. */
-function keepAudioOnly(deps: WorkflowDeps, mode: Mode): DictationRun {
-  return {
-    push: () => {},
-    finish: async (clip) => {
-      const record: SessionRecord = {
-        id: deps.newId(),
-        createdAt: Date.now(),
-        mode,
-        context: {},
-        rawText: "",
-        finalText: "",
-        audioMs: durationMs(clip),
-        timings: { sttMs: 0, rulesMs: 0, llmMs: 0, insertMs: 0, totalMs: 0 },
-      };
-      await deps.history.save(record);
-      await keepAudio(deps, clip, record.id);
-      return { text: deps.problems[0] ?? "Speech-to-text is not configured" };
-    },
-    cancel: () => {},
-  };
-}
-
 async function keepAudio(deps: WorkflowDeps, clip: AudioClip, id: string): Promise<void> {
   try {
     await deps.history.attachAudio(id, await deps.saveRecording(clip), durationMs(clip));
@@ -200,14 +158,17 @@ async function keepAudio(deps: WorkflowDeps, clip: AudioClip, id: string): Promi
 
 const durationMs = (clip: AudioClip) => Math.round((clip.samples.length / clip.sampleRate) * 1000);
 
-/** One line per dictation, so a wrong script or a slow stage is obvious without a debugger. */
-function summarise(record: SessionRecord, script: AppSettings["script"], pasteError?: string): string {
-  const { sttMs, llmMs, insertMs, totalMs } = record.timings;
+/** One line per dictation, so a wrong result or a slow stage is obvious without a debugger. */
+function summarise(record: SessionRecord, pasteError?: string): string {
+  const { sttMs, insertMs, totalMs } = record.timings;
   const changed = record.rawText !== record.finalText;
   const tail = pasteError
     ? ` | PASTE FAILED: ${pasteError}`
-    : ` | stt ${sttMs}ms · llm ${llmMs}ms · insert ${insertMs}ms · total ${totalMs}ms`;
-  return `dictation [${script}]: "${record.rawText}"${changed ? ` → "${record.finalText}"` : " (unchanged)"}${tail}`;
+    : ` | server ${sttMs}ms · insert ${insertMs}ms · total ${totalMs}ms`;
+  // The server pastes the words as heard when its rewrite fails (a Hinglish reply still in
+  // Devanagari twice, a timeout); without the reason the log could not tell that from a good result.
+  const why = record.rewriteError ? ` | REWRITE FAILED: ${record.rewriteError}` : "";
+  return `dictation: "${record.rawText}"${changed ? ` → "${record.finalText}"` : " (unchanged)"}${tail}${why}`;
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));

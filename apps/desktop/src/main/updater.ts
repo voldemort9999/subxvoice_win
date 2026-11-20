@@ -48,7 +48,7 @@ export function startUpdater(onChange: (state: UpdateState) => void, isPackaged:
     if (state.kind === "downloading") set({ ...state, percent: Math.round(progress.percent) });
   });
   autoUpdater.on("update-downloaded", (info) => set({ kind: "ready", version: info.version }));
-  autoUpdater.on("error", (error) => set({ kind: "error", message: String(error?.message ?? error) }));
+  autoUpdater.on("error", (error) => failed(error));
 
   void checkForUpdate();
   setInterval(() => void checkForUpdate(), CHECK_EVERY_MS).unref();
@@ -61,7 +61,7 @@ export async function checkForUpdate(): Promise<UpdateState> {
   try {
     await autoUpdater.checkForUpdates();
   } catch (error) {
-    set({ kind: "error", message: String(error instanceof Error ? error.message : error) });
+    failed(error);
   }
   return state;
 }
@@ -75,4 +75,14 @@ export function installUpdate(): void {
 
 function log(message?: unknown): void {
   console.log("[updater]", message);
+}
+
+/**
+ * The updater's own errors are written for developers (HTTP codes, YAML paths), so they go to the
+ * log and people get one plain sentence. (From the Mac app; its unsigned-copy download offer is
+ * macOS-only and not taken.)
+ */
+function failed(error: unknown): void {
+  console.error("update check failed:", error);
+  set({ kind: "error", message: "Couldn't check for updates. Check your connection and try again." });
 }

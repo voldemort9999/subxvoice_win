@@ -1,11 +1,11 @@
 // The small set of shapes every screen is built from. Deliberately not a component library:
 // anything used once lives in the page that uses it.
 //
-// There are no cards. A section is a heading on a hairline, and space does the rest — the same
-// rule the website is held to. A box appears only where the content really is an object: the
-// typed text, a key, a menu.
-import { type ReactNode, useEffect, useState } from "react";
-import { CheckIcon, CopyIcon } from "./icons";
+// There are no cards. A section is a heading on a hairline, and space does the rest. A box appears
+// only where the content really is an object: the typed text, a key, a menu. Things you press are
+// raised out of the cream and things that hold a value are pressed into it (styles.css).
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { CheckIcon, CopyIcon, MoreIcon } from "./icons";
 
 export function Section({
   title,
@@ -32,23 +32,10 @@ export function Section({
   );
 }
 
-/** A text link that does something in the app. Underlined, because colour alone can't carry it here. */
-export function TextAction({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="font-medium text-ink-soft underline decoration-rule-strong underline-offset-[3px] transition-colors hover:text-ink hover:decoration-marigold"
-    >
-      {children}
-    </button>
-  );
-}
-
 /**
  * One number with what it means, set as the headline of its column. `note` is for the caveat the
  * number needs — an assumption, or what it is measured against — so the figure is never read as
- * more certain than it is. `mark` gives it a Marigold rule: only for the figure that is the result.
+ * more certain than it is. `mark` gives it a ultramarine rule: only for the figure that is the result.
  */
 export function Figure({
   label,
@@ -64,7 +51,7 @@ export function Figure({
   mark?: boolean;
 }) {
   return (
-    <div className="min-w-0 px-5 first:pl-0 last:pr-0">
+    <div className="min-w-0 px-5 py-4">
       <p className="text-ink-soft">{label}</p>
       {/* A worded value ("under a minute") is set smaller, or it breaks across two lines. */}
       <p
@@ -72,11 +59,11 @@ export function Figure({
       >
         {value}
         {unit && (
-          <span className="ml-1 font-sans text-[13px] font-medium tracking-normal text-ink-soft">{unit}</span>
+          <span className="ml-1 font-sans text-[14px] font-medium tracking-normal text-ink-soft">{unit}</span>
         )}
       </p>
       <span
-        className={`mt-3 block h-[3px] w-8 ${mark ? "bg-marigold" : "bg-rule-strong"}`}
+        className={`mt-3 block h-[3px] w-8 ${mark ? "bg-accent" : "bg-rule-strong"}`}
         aria-hidden="true"
       />
       {note && <p className="mt-2 text-xs text-ink-faint">{note}</p>}
@@ -84,9 +71,13 @@ export function Figure({
   );
 }
 
-/** Figures side by side, divided by rules rather than boxed. */
+/** Figures side by side in one tray pressed into the page, like the readout of an instrument. */
 export function Figures({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-y-6 divide-rule md:grid-cols-4 md:divide-x">{children}</div>;
+  return (
+    <div className="pressed-in grid grid-cols-2 divide-rule rounded-[16px] px-1 py-1 md:grid-cols-4 md:divide-x">
+      {children}
+    </div>
+  );
 }
 
 export function Button({
@@ -95,6 +86,7 @@ export function Button({
   variant = "quiet",
   type = "button",
   disabled,
+  busy = false,
   className = "",
 }: {
   children: ReactNode;
@@ -102,20 +94,23 @@ export function Button({
   variant?: "primary" | "quiet";
   type?: "button" | "submit";
   disabled?: boolean;
+  /** Working on it: takes no clicks, but stays at full colour so the motion inside reads. */
+  busy?: boolean;
   className?: string;
 }) {
-  // Primary is the website's call to action: a Marigold fill with Aubergine text, the one place
-  // the accent is large and legible at once. It goes to Aubergine on hover, as it does there.
+  // Both are raised: a button is something you press. Primary is the one ultramarine thing on a
+  // screen; quiet is cream standing up out of cream.
   const variants = {
-    primary: "bg-marigold text-on-marigold hover:bg-ink hover:text-page",
-    quiet: "border border-rule-strong text-ink hover:bg-well",
+    primary: "raised-accent text-on-accent",
+    quiet: "raised text-ink",
   };
   return (
     <button
       type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-[3px] px-3.5 py-1.5 font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40 ${variants[variant]} ${className}`}
+      onClick={busy ? undefined : onClick}
+      disabled={disabled && !busy}
+      aria-busy={busy || undefined}
+      className={`rounded-[10px] px-4 py-2 font-semibold transition-[filter,transform] hover:brightness-[1.04] active:translate-y-px disabled:pointer-events-none disabled:opacity-40 ${busy ? "pointer-events-none" : ""} ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -173,7 +168,7 @@ export function CopyButton({ text, label = "Copy text" }: { text: string; label?
       title={copied ? "Copied" : label}
       disabled={!text}
       className={`grid h-7 w-7 shrink-0 place-items-center rounded-[3px] transition-colors disabled:opacity-30 ${
-        copied ? "bg-marigold text-on-marigold" : "text-ink-soft hover:bg-well hover:text-ink"
+        copied ? "bg-accent text-on-accent" : "text-ink-soft hover:bg-well hover:text-ink"
       }`}
     >
       {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
@@ -181,7 +176,7 @@ export function CopyButton({ text, label = "Copy text" }: { text: string; label?
   );
 }
 
-/** A row of choices; the chosen one sits on a Marigold underline, which is what "current" means here. */
+/** A row of choices; the chosen one sits on a ultramarine underline, which is what "current" means here. */
 export function Segmented<T extends string>({
   options,
   value,
@@ -205,7 +200,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(option.value)}
             aria-pressed={chosen}
             className={`border-b-2 pb-1 font-medium transition-colors ${
-              chosen ? "border-marigold text-ink" : "border-transparent text-ink-soft hover:text-ink"
+              chosen ? "border-accent text-ink" : "border-transparent text-ink-soft hover:text-ink"
             }`}
           >
             {option.label}
@@ -216,9 +211,9 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Text inputs and selects share one look: a lifted field with a hairline that firms up on focus. */
+/** Text inputs and selects share one look: pressed into the cream, ringed in ultramarine on focus. */
 export const FIELD =
-  "w-full rounded-[3px] border border-rule-strong bg-paper px-3 py-2 text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-ink";
+  "pressed-in w-full rounded-[10px] px-3 py-2.5 text-ink outline-none placeholder:text-ink-faint focus:ring-2 focus:ring-accent/60";
 
 export interface SelectOption {
   value: string;
@@ -278,15 +273,15 @@ export function Toggle({
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-        checked ? "border-marigold bg-marigold" : "border-rule-strong bg-well"
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+        checked ? "bg-accent shadow-[inset_0_2px_4px_rgb(0_0_0/30%)]" : "pressed-in"
       }`}
     >
       <span
         /* left-0 is load-bearing: a button centres its content, so without it the knob's
            static position is mid-track and translate-x pushes it out the right-hand end. */
-        className={`absolute top-[1px] left-0 h-4 w-4 rounded-full transition-transform ${
-          checked ? "translate-x-[17px] bg-on-marigold" : "translate-x-[1px] bg-ink-soft"
+        className={`raised absolute top-[3px] left-0 h-[18px] w-[18px] rounded-full transition-transform ${
+          checked ? "translate-x-[23px]" : "translate-x-[3px]"
         }`}
       />
     </button>
@@ -300,11 +295,11 @@ export function Empty({ children }: { children: ReactNode }) {
 
 /**
  * Something that needs the user: a failure, a missing permission. There is no red in this
- * palette, so it is marked the way the accent is spent everywhere else — a Marigold edge.
+ * palette, so it is marked the way the accent is spent everywhere else — a ultramarine edge.
  */
 export function Notice({ children, role = "status" }: { children: ReactNode; role?: "status" | "alert" }) {
   return (
-    <div role={role} className="border-l-[3px] border-marigold bg-paper px-3.5 py-2.5 text-ink">
+    <div role={role} className="border-l-[3px] border-accent bg-paper px-3.5 py-2.5 text-ink">
       {children}
     </div>
   );
@@ -318,6 +313,64 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
         {hint && <p className="mt-1 text-xs leading-relaxed text-ink-soft">{hint}</p>}
       </div>
       <div className="mt-2 sm:mt-0">{children}</div>
+    </div>
+  );
+}
+
+export interface MoreItem {
+  label: string;
+  onClick: () => unknown;
+  /** A line above it: set apart, as a delete is. */
+  divided?: boolean;
+}
+
+/** The ⋮ button and its short menu. Closes on a pick, a click elsewhere, or Esc. */
+export function MoreMenu({ items, label = "More" }: { items: MoreItem[]; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (
+        event instanceof KeyboardEvent ? event.key === "Escape" : !box.current?.contains(event.target as Node)
+      )
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative">
+      <IconButton icon={MoreIcon} label={label} onClick={() => setOpen(!open)} />
+      {open && (
+        <div
+          role="menu"
+          className="absolute top-8 right-0 z-20 w-56 overflow-hidden rounded-[12px] border border-rule bg-paper py-1 shadow-[0_10px_30px_rgb(0_0_0/18%)]"
+        >
+          {items.map((item) => (
+            <div key={item.label}>
+              {item.divided && <div className="my-1 border-t border-rule" />}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  void item.onClick();
+                }}
+                className="block w-full px-3.5 py-2 text-left text-[13px] text-ink transition-colors hover:bg-well"
+              >
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

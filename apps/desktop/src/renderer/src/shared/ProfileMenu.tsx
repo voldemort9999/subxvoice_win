@@ -7,9 +7,14 @@ function initial(account: AccountState): string {
   return source.trim().charAt(0).toUpperCase();
 }
 
+/**
+ * Who is signed in, at the foot of the sidebar: a round initial, the name and the plan. Clicking
+ * it opens upwards, because there is no room below.
+ */
 export function ProfileMenu({ account }: { account: AccountState }) {
   const [open, setOpen] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
+  const name = account.name || account.email || "You";
 
   // A menu that stays open after you look away is a menu in the way.
   useEffect(() => {
@@ -29,24 +34,32 @@ export function ProfileMenu({ account }: { account: AccountState }) {
   }, [open]);
 
   return (
-    <div ref={holder} className="relative">
+    <div ref={holder} className="relative min-w-0 flex-1">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={account.name || account.email || "Account"}
-        className={`grid h-8 w-8 place-items-center rounded-full bg-ink font-display text-[13px] font-bold text-page transition-shadow ${
-          open ? "ring-2 ring-marigold ring-offset-2 ring-offset-page" : ""
-        }`}
+        className="flex w-full min-w-0 items-center gap-2.5 rounded-[12px] px-1.5 py-1.5 text-left transition-colors hover:bg-side-rule/60"
       >
-        {initial(account)}
+        {account.photo ? (
+          <img src={account.photo} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+        ) : (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-side-accent font-display text-[15px] [font-weight:var(--display-weight)] text-side">
+            {initial(account)}
+          </span>
+        )}
+        <span className="min-w-0">
+          <span className="block truncate font-semibold">{name}</span>
+          {/* The email, not a plan name: there are no plans to name until billing exists. */}
+          {account.email && <span className="block truncate text-xs text-side-soft">{account.email}</span>}
+        </span>
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute top-10 right-0 z-20 w-60 rounded-[3px] border border-rule-strong bg-paper p-1 shadow-[0_8px_24px_rgb(58_15_52/18%)]"
+          className="absolute bottom-full left-0 z-20 mb-2 w-60 rounded-[12px] border border-rule-strong bg-paper p-1 text-ink shadow-[0_8px_24px_rgb(var(--shade)/18%)]"
         >
           <div className="border-b border-rule px-3 py-2.5">
             {account.name && <p className="truncate font-semibold">{account.name}</p>}
@@ -59,7 +72,7 @@ export function ProfileMenu({ account }: { account: AccountState }) {
               setOpen(false);
               void window.subx.auth.signOut();
             }}
-            className="mt-1 w-full rounded-[3px] px-3 py-2 text-left text-ink-soft hover:bg-well hover:text-ink"
+            className="mt-1 w-full rounded-[8px] px-3 py-2 text-left text-ink-soft hover:bg-well hover:text-ink"
           >
             Sign out
           </button>

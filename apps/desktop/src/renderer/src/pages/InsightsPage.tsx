@@ -1,18 +1,22 @@
-import { useState } from "react";
-import { formatCount, formatDuration, formatSpan } from "../shared/format";
-import { useHistory } from "../shared/hooks";
+import { useEffect, useState } from "react";
+import { formatCount, formatSpan, formatWords } from "../shared/format";
+import { useDayTotals, useHistory } from "../shared/hooks";
 import {
+  bestsOfTotals,
   byApp,
   byDay,
   byHour,
-  latency,
+  cleanup,
   longest,
-  pipelineMix,
-  speakingMs,
-  timeSavedMs,
-  totalWords,
+  personalBests,
+  rangeStart,
+  rhythm,
+  savedMsOf,
+  scripts,
+  sumTotals,
+  WORDS_PER_PAGE,
   wordCount,
-  wordsPerMinute,
+  wordsOn,
 } from "../shared/stats";
 import { CopyButton, Empty, Figure, Figures, Section, Segmented } from "../shared/ui";
 
@@ -24,130 +28,199 @@ const RANGES: { value: Range; label: string }[] = [
   { value: "90", label: "90 days" },
 ];
 
+/**
+ * What the user's voice has done for them, in their terms: words, time, what SUBXVoice fixed
+ * along the way, how they talk. Nothing about the machinery (stage timings, models) — that is
+ * ours to watch, not theirs.
+ */
 export function InsightsPage({ hotkey }: { hotkey: string }) {
   const records = useHistory();
+  const totals = useDayTotals();
   const [range, setRange] = useState<Range>("30");
-  if (!records) return null;
+  const [learned, setLearned] = useState<number | null>(null);
+  useEffect(() => void window.subx.dictionary.list().then((entries) => setLearned(entries.length)), []);
+  if (!records || !totals) return null;
 
-  if (records.length === 0) {
-    return <Empty>Nothing to show yet. Hold {hotkey} in any app, and what you dictate turns up here.</Empty>;
+  // Empty only when nothing was ever said: the totals outlive deleted dictations.
+  if (records.length === 0 && sumTotals(totals).dictations === 0) {
+    return <Empty>Nothing to show yet. Hold {hotkey} in any app, and what you say turns up here.</Empty>;
   }
 
   const days = Number(range);
-  const buckets = byDay(records, days);
+  // Words and time from the daily totals; what needs the text (apps, scripts, the longest
+  // dictation) from the dictations still kept.
+  const buckets = byDay(records, days).map((bucket) => ({ ...bucket, words: wordsOn(totals, bucket.start) }));
   const inRange = buckets.flatMap((bucket) => bucket.records);
+  const period = sumTotals(totals, rangeStart(days));
+  const words = period.words;
+  const saved = savedMsOf(period);
+  const done = cleanup(inRange);
+  const mix = scripts(inRange);
   const apps = byApp(inRange);
   const hours = byHour(inRange);
-  const wait = latency(inRange);
-  const mix = pipelineMix(inRange);
+  const habit = rhythm(hours);
+  const bests = { ...personalBests(records), ...bestsOfTotals(totals) };
   const best = longest(inRange);
+  const pages = words / WORDS_PER_PAGE;
 
   return (
     <div className="space-y-10">
-      <div className="flex items-end justify-between gap-3">
-        <p className="text-[14px] text-ink-soft">
-          {inRange.length === 0
-            ? "Nothing dictated in this period."
-            : `${formatCount(inRange.length)} dictations, ${formatCount(totalWords(inRange))} words.`}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <p className="max-w-2xl text-[19px] leading-snug">
+          {inRange.length === 0 ? (
+            "Nothing said in this period."
+          ) : (
+            <>
+              You said <strong className="font-semibold">{formatWords(words)}</strong>
+              {pages >= 0.5 && (
+                <> — about {pages < 1.5 ? "a page" : `${Math.round(pages)} pages`} of a book —</>
+              )}{" "}
+              and skipped <strong className="font-semibold">{formatSpan(saved)}</strong> of typing.
+            </>
+          )}
         </p>
         <Segmented options={RANGES} value={range} onChange={setRange} label="Time range" />
       </div>
 
       <Figures>
-        <Figure label="Words" value={formatCount(totalWords(inRange))} note={`Over ${days} days`} />
-        <Figure label="Spoken" value={formatDuration(speakingMs(inRange))} note="Microphone time" />
+        <Figure label="Words" value={formatCount(words)} note={`In ${days} days`} />
+        <Figure label="Time saved" value={formatSpan(saved)} note="Against typing at 40 wpm" mark />
         <Figure
-          label="Time saved"
-          value={formatSpan(timeSavedMs(inRange))}
-          note="Against 40 wpm typing"
-          mark
+          label="Tidied for you"
+          value={formatCount(done.rewritten)}
+          note={
+            done.spoken ? `${Math.round((done.rewritten / done.spoken) * 100)}% of dictations` : undefined
+          }
         />
         <Figure
-          label="Rate"
-          value={wordsPerMinute(inRange) ? String(wordsPerMinute(inRange)) : "—"}
-          unit={wordsPerMinute(inRange) ? "wpm" : undefined}
-          note="While speaking"
+          label="Your words"
+          value={learned === null ? "—" : formatCount(learned)}
+          note="In your dictionary"
         />
       </Figures>
+
+      <Section title="What SUBXVoice handled">
+        {done.spoken === 0 ? (
+          <Empty>Nothing said in this period.</Empty>
+        ) : (
+          <ul className="grid gap-x-10 gap-y-6 md:grid-cols-3">
+            <Handled
+              value={done.rewritten}
+              label="times rewritten"
+              body="Corrected, punctuated and laid out after you spoke, before it was typed."
+            />
+            <Handled
+              value={done.trimmed}
+              label="words taken out"
+              body="Filler words, repeats and the words you took back, removed before anything was typed."
+            />
+            <Handled
+              value={mix.mixed}
+              label="language mixes"
+              body="Dictations with two languages in one breath, each kept in its own words."
+            />
+          </ul>
+        )}
+      </Section>
 
       <Section title="Words per day">
         <DailyBars buckets={buckets} />
       </Section>
 
       <div className="grid gap-10 md:grid-cols-2">
-        <Section title="Where the words went">
+        <Section title="Where your words went">
           {apps.length === 0 ? (
             <Empty>No app recorded yet for these dictations.</Empty>
           ) : (
             <ul className="space-y-3">
-              {apps.map((app) => {
-                const share = app.count / (apps[0]?.count || 1);
-                return (
-                  <li key={app.name}>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <span className="truncate font-semibold">{app.name}</span>
-                      <span className="figure-num shrink-0 text-xs text-ink-soft">
-                        {app.count} · {formatCount(app.words)} words
-                      </span>
-                    </div>
-                    <Track percent={Math.max(3, share * 100)} tone="bg-ink-soft" />
-                  </li>
-                );
-              })}
+              {apps.map((app) => (
+                <li key={app.name}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <span className="truncate font-semibold">{app.name}</span>
+                    <span className="figure-num shrink-0 text-xs text-ink-soft">
+                      {formatWords(app.words)}
+                    </span>
+                  </div>
+                  <Track
+                    percent={Math.max(3, (app.count / (apps[0]?.count || 1)) * 100)}
+                    tone="bg-ink-soft"
+                  />
+                </li>
+              ))}
             </ul>
           )}
         </Section>
 
-        <Section title="When you dictate">
+        <Section title="Your rhythm">
+          {habit && (
+            <p className="mb-3">
+              <span className="font-semibold">{habit.label}</span>
+              <span className="text-ink-soft"> · you talk most around {hourName(habit.peak)}</span>
+            </p>
+          )}
           <HourStrip hours={hours} />
-        </Section>
-      </div>
-
-      <div className="grid gap-10 md:grid-cols-2">
-        <Section title="How long you wait after letting go">
-          {wait.samples === 0 ? (
-            <Empty>No completed dictations in this period.</Empty>
-          ) : (
-            <>
-              <p className="figure text-[34px]">
-                {wait.total}
-                <span className="ml-1 font-sans text-[13px] font-medium tracking-normal text-ink-soft">
-                  ms median
-                </span>
-              </p>
-              <p className="mt-2 text-xs text-ink-faint">
-                Measured from key-release across {wait.samples}{" "}
-                {wait.samples === 1 ? "dictation" : "dictations"}
-              </p>
-              {/* Three weights of Aubergine: these are parts of one wait, not rivals for attention. */}
-              <dl className="mt-5 space-y-3">
-                <Stage label="Speech to text" ms={wait.stt} total={wait.total} tone="bg-ink" />
-                <Stage label="Rewriting" ms={wait.llm} total={wait.total} tone="bg-ink-soft" />
-                <Stage label="Typing it out" ms={wait.insert} total={wait.total} tone="bg-ink-faint" />
-              </dl>
-            </>
-          )}
-        </Section>
-
-        <Section title="What the pipeline did">
-          {mix.total === 0 ? (
-            <Empty>No transcripts in this period.</Empty>
-          ) : (
-            <ul className="space-y-3">
-              <Mix label="Came back in Devanagari" value={mix.devanagari} total={mix.total} />
-              <Mix label="Rewritten before typing" value={mix.cleaned} total={mix.total} />
-              <Mix label="Typed in Roman script" value={mix.romanOut} total={mix.total} />
-            </ul>
+          {mix.used.length > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 text-ink-soft">Scripts you wrote in</p>
+              <ul className="flex flex-wrap gap-2">
+                {mix.used.map((script) => (
+                  <li
+                    key={script.name}
+                    title={`${script.name}: ${script.count} ${script.count === 1 ? "dictation" : "dictations"}`}
+                    className="pressed-in rounded-full px-3 py-1 text-[13px]"
+                  >
+                    <span className="mr-1.5">{script.sample}</span>
+                    <span className="text-ink-faint">{script.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </Section>
       </div>
+
+      <Section title="Personal bests">
+        <Figures>
+          <Figure
+            label="Fastest"
+            value={bests.fastest ? String(bests.fastest) : "—"}
+            unit={bests.fastest ? "wpm" : undefined}
+            note="One dictation"
+          />
+          <Figure
+            label="Longest"
+            value={formatCount(wordCount(longest(records)?.finalText ?? ""))}
+            unit="words"
+            note="In one go"
+          />
+          <Figure
+            label="Best day"
+            value={bests.bestDay ? formatCount(bests.bestDay.words) : "—"}
+            unit={bests.bestDay ? (bests.bestDay.words === 1 ? "word" : "words") : undefined}
+            note={
+              bests.bestDay
+                ? new Date(bests.bestDay.start).toLocaleDateString([], { day: "numeric", month: "short" })
+                : undefined
+            }
+          />
+          <Figure
+            label="Longest streak"
+            value={String(bests.longestStreak)}
+            unit={bests.longestStreak === 1 ? "day" : "days"}
+            note="In a row"
+            mark
+          />
+        </Figures>
+      </Section>
 
       {best?.finalText && (
         <Section
-          title="Longest dictation"
+          title="Your longest in this period"
           action={
             <div className="flex items-center gap-3">
-              <span className="figure-num text-xs text-ink-soft">{wordCount(best.finalText)} words</span>
+              <span className="figure-num text-xs text-ink-soft">
+                {formatWords(wordCount(best.finalText))}
+              </span>
               <CopyButton text={best.finalText} />
             </div>
           }
@@ -158,6 +231,23 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
     </div>
   );
 }
+
+function Handled({ value, label, body }: { value: number; label: string; body: string }) {
+  return (
+    <li>
+      <p className="figure text-[34px]">
+        {formatCount(value)}
+        <span className="ml-1.5 font-sans text-[14px] font-medium tracking-normal text-ink-soft">
+          {label}
+        </span>
+      </p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">{body}</p>
+    </li>
+  );
+}
+
+const hourName = (hour: number) =>
+  new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" }).replace(":00", "");
 
 function Track({ percent, tone }: { percent: number; tone: string }) {
   return (
@@ -183,12 +273,12 @@ function DailyBars({ buckets }: { buckets: ReturnType<typeof byDay> }) {
           <div
             key={bucket.start}
             className="flex h-full flex-1 flex-col justify-end"
-            title={`${new Date(bucket.start).toLocaleDateString()}: ${bucket.words} words`}
+            title={`${new Date(bucket.start).toLocaleDateString()}: ${formatWords(bucket.words)}`}
           >
             <div
               // Today is the one bar still growing, so it carries the accent.
               className={`w-full rounded-t-[2px] ${
-                bucket.words ? (index === last ? "bg-marigold" : "bg-ink-soft") : "bg-rule-strong"
+                bucket.words ? (index === last ? "bg-accent" : "bg-ink-soft") : "bg-rule-strong"
               }`}
               style={{ height: bucket.words ? `${Math.max(4, (bucket.words / max) * 100)}%` : 2 }}
             />
@@ -209,10 +299,10 @@ function DailyBars({ buckets }: { buckets: ReturnType<typeof byDay> }) {
   );
 }
 
-/** 24 cells, so the hours you never dictate in are as visible as the ones you do. */
 /** Fixed positions, so the key is the hour itself rather than a list index. */
 const HOURS_OF_DAY = Array.from({ length: 24 }, (_, hour) => hour);
 
+/** 24 cells, so the hours you never dictate in are as visible as the ones you do. */
 function HourStrip({ hours }: { hours: number[] }) {
   const max = Math.max(...hours, 1);
   return (
@@ -229,7 +319,7 @@ function HourStrip({ hours }: { hours: number[] }) {
                   ? `color-mix(in oklab, var(--ink) ${Math.round((count / max) * 85 + 15)}%, var(--page))`
                   : "var(--well)",
               }}
-              title={`${hour}:00 — ${count} ${count === 1 ? "dictation" : "dictations"}`}
+              title={`${hourName(hour)} — ${count} ${count === 1 ? "dictation" : "dictations"}`}
             />
           );
         })}
@@ -240,33 +330,5 @@ function HourStrip({ hours }: { hours: number[] }) {
         <span>midnight</span>
       </div>
     </figure>
-  );
-}
-
-function Stage({ label, ms, total, tone }: { label: string; ms: number; total: number; tone: string }) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <dt className="text-ink-soft">{label}</dt>
-        <dd className="figure-num m-0 font-semibold">{ms} ms</dd>
-      </div>
-      <Track percent={(ms / (total || 1)) * 100} tone={tone} />
-    </div>
-  );
-}
-
-function Mix({ label, value, total }: { label: string; value: number; total: number }) {
-  const percent = Math.round((value / total) * 100);
-  return (
-    <li>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="text-ink-soft">{label}</span>
-        <span className="figure-num font-semibold">
-          {value}
-          <span className="ml-1.5 text-xs font-normal text-ink-faint">{percent}%</span>
-        </span>
-      </div>
-      <Track percent={percent} tone="bg-ink-soft" />
-    </li>
   );
 }

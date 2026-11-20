@@ -3,7 +3,7 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import type { DictionaryEntry, DictionaryStore, HistoryStore, SessionRecord } from "@subx/core";
 
-class JsonFile<T> {
+export class JsonFile<T> {
   private readonly path: () => string;
   private readonly fallback: T;
   private pending: Promise<void> = Promise.resolve();
@@ -18,19 +18,30 @@ class JsonFile<T> {
     try {
       return JSON.parse(await readFile(this.path(), "utf8")) as T;
     } catch {
-      return this.fallback;
+      // A fresh copy each time. Handing out the one fallback object let a store that started
+      // without a file add to it, so the next account to start without a file was handed the last
+      // account's dictations, and saved them as its own (found 2026-11-20).
+      return structuredClone(this.fallback);
     }
   }
 
-  /** Writes are queued and atomic (temp file + rename), so a crash never leaves half a file. */
+  /**
+   * Writes are queued and atomic (temp file + rename), so a crash never leaves half a file. The
+   * path is fixed when the write is asked for, not when it runs: a save that started for one account
+   * must not land in the next one's folder after a switch. One failed write (a full disk) fails only
+   * itself; the queue carries on.
+   */
   write(value: T): Promise<void> {
-    this.pending = this.pending.then(async () => {
-      const path = this.path();
-      const temp = `${path}.tmp`;
-      await writeFile(temp, JSON.stringify(value));
-      await rename(temp, path);
-    });
-    return this.pending;
+    const path = this.path();
+    const next = this.pending
+      .catch(() => {})
+      .then(async () => {
+        const temp = `${path}.tmp`;
+        await writeFile(temp, JSON.stringify(value));
+        await rename(temp, path);
+      });
+    this.pending = next;
+    return next;
   }
 }
 
@@ -65,6 +76,16 @@ export class JsonHistoryStore implements HistoryStore {
     const records = await this.load();
     this.records = records.filter((record) => record.id !== id);
     await this.file.write(this.records);
+  }
+
+  /** Takes out every record `drop` picks and returns them, so their recordings can go too. */
+  async removeWhere(drop: (record: SessionRecord) => boolean): Promise<SessionRecord[]> {
+    const records = await this.load();
+    const removed = records.filter(drop);
+    if (removed.length === 0) return [];
+    this.records = records.filter((record) => !drop(record));
+    await this.file.write(this.records);
+    return removed;
   }
 
   /** The pipeline writes the record; the app saves the audio afterwards, off the critical path. */

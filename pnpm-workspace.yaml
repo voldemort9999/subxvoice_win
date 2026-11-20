@@ -4,9 +4,22 @@ packages:
 
 # pnpm only runs install scripts for packages listed here.
 allowBuilds:
+  "@google/genai": false # pulled in by pi-ai (assistant); not needed to run
   electron: true
   electron-winstaller: false
   esbuild: true
-  koffi: true  # ships prebuilt binaries; its install script only picks the right one
+  koffi: true # ships prebuilt binaries; its install script only picks the right one
+  protobufjs: false # pulled in by pi-ai; its postinstall only prints a version notice
   sharp: false
   unrs-resolver: false
+
+overrides:
+  # electron-builder pulls in the Squirrel.Windows installer; this app builds NSIS installers, so the
+  # package is never needed (from the Mac repo, 2026-11-20).
+  electron-builder-squirrel-windows: "-"
+  # Security fixes in build and test tools (none of these ship inside the app): the downloader
+  # electron uses at install, electron-builder's helpers, the CSS build.
+  undici@6: ^6.29.1
+  undici@7: ^7.30.1
+  fast-uri: ^3.1.9
+  source-map-js: ^1.2.2
