@@ -18,8 +18,8 @@ export const THEMES = [
   {
     id: "light",
     name: "Light",
-    feel: "Clean and bright, for a well-lit room. White paper, grey sidebar, black for what matters.",
-    swatch: { page: "#ffffff", side: "#f3f3f5", accent: "#18181b" },
+    feel: "Clean and bright, for a well-lit room. White paper, a grey sidebar, and the logo's blue for what matters.",
+    swatch: { page: "#ffffff", side: "#f3f3f5", accent: "#3b4fe0" },
   },
   {
     id: "night",
@@ -30,14 +30,14 @@ export const THEMES = [
   {
     id: "ink",
     name: "Ink",
-    feel: "Deep focus. Navy steadies attention; tangerine is the nudge to act.",
-    swatch: { page: "#e8ecf3", side: "#13203a", accent: "#f0652f" },
+    feel: "Deep focus. Navy steadies attention; a deep teal marks what to act on, without shouting.",
+    swatch: { page: "#e8ecf3", side: "#13203a", accent: "#1b7d74" },
   },
   {
     id: "plum",
     name: "Plum",
-    feel: "Creative and warm. Plum leans to imagination; marigold to optimism.",
-    swatch: { page: "#f3ecf1", side: "#2c1830", accent: "#e8a317" },
+    feel: "Creative and warm. Plum leans to imagination; a soft rose keeps it gentle.",
+    swatch: { page: "#f3ecf1", side: "#2c1830", accent: "#a84d78" },
   },
 ] as const;
 

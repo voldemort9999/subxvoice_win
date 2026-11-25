@@ -61,7 +61,7 @@
   color-scheme: dark;
 }
 
-/* Ink — deep focus: navy steadies attention, tangerine is the nudge to act. */
+/* Ink — deep focus: navy steadies attention, a deep teal marks what to act on (Mac c91d412). */
 :root[data-theme="ink"] {
   --page: #e8ecf3;
   --paper: #f6f8fb;
@@ -70,20 +70,20 @@
   --ink: #13203a;
   --ink-soft: #384560;
   --ink-faint: #5d6981;
-  --accent: #f0652f;
-  --on-accent: #13203a;
-  --accent-ink: #b7421a;
+  --accent: #1b7d74;
+  --on-accent: #f6f8fb;
+  --accent-ink: #13706a;
   --side: #13203a;
   --side-ink: #e8ecf3;
-  --side-accent: #ff8a5c;
+  --side-accent: #5ec9bd;
   --shade: 20 32 58;
   --stage: #13203a;
   --stage-ink: 232 236 243;
-  --stage-accent: 255 138 92;
+  --stage-accent: 94 201 189;
   color-scheme: light;
 }
 
-/* Plum — creative and warm: plum for imagination, marigold for optimism. */
+/* Plum — creative and warm: plum leans to imagination, a soft rose keeps it gentle (Mac c91d412). */
 :root[data-theme="plum"] {
   --page: #f3ecf1;
   --paper: #fbf7fa;
@@ -92,16 +92,16 @@
   --ink: #2c1830;
   --ink-soft: #523e58;
   --ink-faint: #756079;
-  --accent: #e8a317;
-  --on-accent: #2c1830;
-  --accent-ink: #875a00;
+  --accent: #a84d78;
+  --on-accent: #fbf7fa;
+  --accent-ink: #933d66;
   --side: #2c1830;
   --side-ink: #f3ecf1;
-  --side-accent: #f2b632;
+  --side-accent: #e59cbd;
   --shade: 60 28 60;
   --stage: #2c1830;
   --stage-ink: 243 236 241;
-  --stage-accent: 242 182 50;
+  --stage-accent: 229 156 189;
   color-scheme: light;
 }
 
@@ -157,12 +157,12 @@
   --ink: #18181b;
   --ink-soft: #42424c;
   --ink-faint: #696974;
-  --accent: #18181b;
+  --accent: #3b4fe0;
   --on-accent: #ffffff;
-  --accent-ink: #18181b;
+  --accent-ink: #3b4fe0;
   --side: #f3f3f5;
   --side-ink: #18181b;
-  --side-accent: #18181b;
+  --side-accent: #3b4fe0;
   --side-inset: inset 0 1px 2px rgb(24 24 40 / 6%);
   --shade: 24 24 40;
   --stage: #18181b;
