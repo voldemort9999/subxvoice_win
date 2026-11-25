@@ -841,7 +841,11 @@ async function start(): Promise<void> {
     const text = pill.unplacedText();
     // A demo from Settings has no words of the user's: the clipboard is left as it is.
     if (text) await clipboard.writeText(text);
-    dictation.confirm("Copied · paste with ⌘V");
+    // The Mac app's wording said ⌘V, which Windows users saw on the pill (user, 2026-11-23).
+    dictation.confirm(`Copied · paste with ${process.platform === "darwin" ? "⌘V" : "Ctrl+V"}`);
+    console.log(
+      `pill: copied the words that had nowhere to go (${text ? "to the clipboard" : "demo, nothing"})`,
+    );
   }
 
   async function undoLearned(): Promise<void> {
