@@ -55,6 +55,8 @@ export class PillWindow {
   /** The pill's drawn size, from the page. */
   private size: { width: number; height: number } | null = null;
   private kind: PillState["kind"] = "idle";
+  /** The pill says the microphone gave only silence: a click opens its check. */
+  private micCheck = false;
   /** The words that had nowhere to go, for the pill's Copy; never from a demo. */
   private unplaced = "";
   /** The words the pill is announcing, so Undo takes out exactly those. */
@@ -355,6 +357,7 @@ export class PillWindow {
     this.kind = state.kind;
     this.learned = state.kind === "learned" && !demo ? state.words : [];
     this.unplaced = state.kind === "unplaced" && !demo ? state.text : "";
+    this.micCheck = state.kind === "error" && state.micCheck === true;
     if (this.window.isDestroyed()) return;
     this.window.webContents.send(IPC.pillState, state);
     if (this.shouldShow()) this.reveal();
@@ -373,6 +376,10 @@ export class PillWindow {
 
   currentKind(): PillState["kind"] {
     return this.kind;
+  }
+
+  showsMicCheck(): boolean {
+    return this.micCheck;
   }
 
   unplacedText(): string {

@@ -81,8 +81,11 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
           const outcome = await session.finish();
 
           if (outcome.kind === "empty") {
-            deps.log?.("dictation: nothing heard");
-            return { text: "Nothing heard" };
+            const silent = digitalSilence(clip.samples);
+            deps.log?.(`dictation: nothing heard${silent ? " (the microphone gave only silence)" : ""}`);
+            return silent
+              ? { text: "", note: "No sound from your microphone", micCheck: true }
+              : { text: "", note: "Didn't catch that" };
           }
           const { record } = outcome;
           if (!sameAccount()) {
@@ -108,6 +111,15 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
       };
     },
   };
+}
+
+/**
+ * A muted or dead microphone hands over exact zeros (at most a stray 1 from rounding); a quiet room
+ * never does. Only then is "No sound from your microphone" true rather than "Didn't catch that".
+ */
+export function digitalSilence(samples: Int16Array): boolean {
+  for (const sample of samples) if (sample > 1 || sample < -1) return false;
+  return true;
 }
 
 /**

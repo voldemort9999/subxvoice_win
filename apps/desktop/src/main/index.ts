@@ -893,6 +893,8 @@ async function start(): Promise<void> {
     const kind = pill.currentKind();
     if (kind === "learned") await undoLearned();
     else if (kind === "unplaced") await copyUnplaced();
+    // "No sound from your microphone": the microphone and its live level are in Settings, General.
+    else if (pill.showsMicCheck()) openMainWindow({ page: "settings", tab: "general" });
     else openMainWindow();
   }
   listen(IPC.pillDemo, (event, state: unknown) => {

@@ -57,6 +57,26 @@ describe("createWorkflow", () => {
     expect(message).toBe("Hi there.");
   });
 
+  it("says what an empty dictation was: a silent microphone, or words not made out", async () => {
+    // The Mac app (6424d95): not "Nothing heard" with a tick.
+    const silent = build({ spoken: "" });
+    const run = await silent.workflow.open("exact");
+    expect(await run.finish(clip)).toEqual({
+      text: "",
+      note: "No sound from your microphone",
+      micCheck: true,
+    });
+
+    const noisy = {
+      samples: Int16Array.from({ length: 16000 }, (_, i) => (i % 7) * 40 - 120),
+      sampleRate: 16000,
+    };
+    const quiet = build({ spoken: "" });
+    const second = await quiet.workflow.open("exact");
+    expect(await second.finish(noisy)).toEqual({ text: "", note: "Didn't catch that" });
+    expect(silent.inserter.inserted).toEqual([]);
+  });
+
   it("types nothing and learns nothing when no text box had the focus", async () => {
     const { workflow, inserter, history, pasted } = build({ spoken: "Hi there." });
     inserter.noTextBox = true;
@@ -126,9 +146,10 @@ describe("createWorkflow", () => {
   it("reports silence without touching the cursor", async () => {
     const { workflow, inserter } = build({ spoken: "   " });
     const run = await workflow.open("exact");
-    const { text: message } = await run.finish(clip);
+    const { text, note } = await run.finish(clip);
 
-    expect(message).toBe("Nothing heard");
+    expect(text).toBe("");
+    expect(note).toBe("No sound from your microphone");
     expect(inserter.inserted).toEqual([]);
   });
 

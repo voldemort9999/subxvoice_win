@@ -359,7 +359,8 @@ export type PillState =
   | { kind: "processing"; message?: string }
   /** `warning` says the words went in, but not in the script that was asked for. */
   | { kind: "done"; message: string }
-  | { kind: "error"; message: string }
+  /** `micCheck`: the microphone gave only silence, and a click opens its check in Settings. */
+  | { kind: "error"; message: string; micCheck?: boolean }
   /** Words just learned from the user's own fixes; clicking the pill takes them back out. */
   | { kind: "learned"; words: string[] }
   /** No text box had the focus, so nothing was typed; clicking the pill copies `text`. */

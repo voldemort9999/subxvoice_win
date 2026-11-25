@@ -30,7 +30,14 @@ export interface DictationRun {
    * Finalise: `clip` is the whole recording, kept for history audio. Returns the pill message and,
    * when the text could not be put in the script the user asked for, the reason.
    */
-  finish(clip: AudioClip): Promise<{ text: string; warning?: string; nowhere?: boolean }>;
+  finish(clip: AudioClip): Promise<{
+    text: string;
+    warning?: string;
+    nowhere?: boolean;
+    /** Nothing was typed, and this says why ("Didn't catch that"); `micCheck`: the mic gave silence. */
+    note?: string;
+    micCheck?: boolean;
+  }>;
   /** Discard without typing anything. */
   cancel(): void;
 }
@@ -272,6 +279,12 @@ export class DictationController {
         // Nowhere to type it: offered for longer, since the user has to act on it.
         this.state = "idle";
         this.show({ kind: "unplaced", text: result.text }, UNPLACED_VISIBLE_MS);
+      } else if (this.state === "processing" && result.note) {
+        this.showResult({
+          kind: "error",
+          message: result.note,
+          ...(result.micCheck ? { micCheck: true } : {}),
+        });
       } else if (this.state === "processing") {
         // The words are already where they were typed: no tick and no words, straight back to rest
         // (the Mac app, e079b6e). A clean-up that failed is said plainly, never its internal error.
