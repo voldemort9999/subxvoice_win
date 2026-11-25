@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { MemoryDictionary } from "@subx/core/fakes";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Backend, type DictionaryChange, OfflineError } from "./backend";
-import { VoiceSettingsCopy } from "./voice";
+import { fitWord, VoiceSettingsCopy } from "./voice";
 
 const hindi = { spoken: ["hi"], hinglish: false, writeIn: null };
 type Word = { word: string; misheardAs: string[] };
@@ -259,5 +259,17 @@ describe("VoiceSettingsCopy", () => {
     await mac.copy.forDictation();
     await mac.copy.forDictation();
     expect(server.calls.get).toBe(before);
+  });
+});
+
+describe("fitWord", () => {
+  it("keeps a word to what the server takes: 60 characters, the newest 10 spellings", () => {
+    const long = "x".repeat(70);
+    const fitted = fitWord({
+      word: ` ${long} `,
+      misheardAs: Array.from({ length: 12 }, (_, i) => `s${i}`).concat(" s3 ", ""),
+    });
+    expect(fitted.word).toHaveLength(60);
+    expect(fitted.misheardAs).toEqual(["s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11"]);
   });
 });

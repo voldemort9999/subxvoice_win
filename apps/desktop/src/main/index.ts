@@ -757,9 +757,10 @@ async function start(): Promise<void> {
   });
   handle(IPC.dictionaryDropPending, (_event, key: unknown) => learner.dropPending(assertString(key, "key")));
   handle(IPC.dictionaryAllowAgain, (_event, word: unknown) => learner.allowAgain(assertString(word, "word")));
-  handle(IPC.dictionaryRemove, async (_event, word: unknown) => {
+  handle(IPC.dictionaryRemove, async (_event, word: unknown, renamed: unknown) => {
     await dictionary.remove(assertString(word, "word"));
-    await learner.removed(assertString(word, "word"));
+    // A rename is not the user taking the word out: the old name may still be learned (Mac 7210c8c).
+    if (renamed !== true) await learner.removed(assertString(word, "word"));
     void voice.pushDictionary();
   });
 

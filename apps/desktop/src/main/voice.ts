@@ -35,10 +35,19 @@ interface Kept {
 const key = (word: string) => word.trim().toLowerCase();
 const sameWord = (a: ServerWord, b: ServerWord) =>
   a.word === b.word && [...a.misheardAs].sort().join("\n") === [...b.misheardAs].sort().join("\n");
-const serverWord = (entry: ServerWord): ServerWord => ({
-  word: entry.word,
-  misheardAs: [...entry.misheardAs],
-});
+/**
+ * What the server takes (Mac 7210c8c): one entry past these made it refuse every dictionary change, so
+ * no word added after it ever reached it, with nothing said to anyone.
+ */
+export const DICTIONARY_LIMITS = { chars: 60, spellings: 10, words: 1000 };
+
+/** A word as it is sent: trimmed to the server's limits, the newest spellings kept. */
+export function fitWord(entry: ServerWord): ServerWord {
+  const { chars, spellings } = DICTIONARY_LIMITS;
+  const heard = [...new Set(entry.misheardAs.map((item) => item.trim().slice(0, chars)).filter(Boolean))];
+  return { word: entry.word.trim().slice(0, chars), misheardAs: heard.slice(-spellings) };
+}
+const serverWord = fitWord;
 const wordsOf = (settings: Settings | null): ServerWord[] | null =>
   settings && Array.isArray(settings.dictionary)
     ? (settings.dictionary as ServerWord[]).filter((entry) => typeof entry?.word === "string")
@@ -193,7 +202,14 @@ export class VoiceSettingsCopy {
     const remove = [...base.values()]
       .filter((entry) => !present.has(key(entry.word)))
       .map((entry) => entry.word);
-    return upsert.length || remove.length ? { upsert, remove } : null;
+    // Never past the server's 1,000 words: new words beyond the room left wait (edits always go).
+    let room = DICTIONARY_LIMITS.words - (base.size - remove.length);
+    const fitting = upsert.filter((entry) => base.has(key(entry.word)) || room-- > 0);
+    if (fitting.length < upsert.length)
+      console.warn(
+        `dictionary: ${upsert.length - fitting.length} word(s) past the 1,000 the server keeps, not sent`,
+      );
+    return fitting.length || remove.length ? { upsert: fitting, remove } : null;
   }
 
   /**

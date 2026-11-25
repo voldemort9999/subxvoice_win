@@ -516,7 +516,8 @@ export interface SubxApi {
     /** Words were added, edited or deleted on another device. */
     onChanged(listener: () => void): () => void;
     upsert(entry: DictionaryEntry): Promise<void>;
-    remove(word: string): Promise<void>;
+    /** `renamed`: the word got a new name, so the old one is not marked as removed. */
+    remove(word: string, renamed?: boolean): Promise<void>;
     /** Fixes seen once and waiting for a second, and the words that are not learned again. */
     learning(): Promise<{ pending: PendingFix[]; removed: string[] }>;
     acceptPending(key: string): Promise<void>;

@@ -71,8 +71,9 @@ export function DictionaryPage() {
   }
 
   async function save(before: DictionaryEntry, next: { word: string; misheardAs: string[] }) {
-    if (next.word !== before.word) await window.subx.dictionary.remove(before.word);
+    // The new name goes in before the old one goes: a refused new name used to lose both (Mac 7210c8c).
     await window.subx.dictionary.upsert({ ...before, ...next });
+    if (next.word !== before.word) await window.subx.dictionary.remove(before.word, true);
     setEditing(null);
     load();
   }
@@ -418,6 +419,12 @@ function AddWordSheet({ onClose }: { onClose: () => void }) {
     const text = word.trim();
     if (!text || busy) return;
     setNote(null);
+    // What the server takes (60 characters a word, 10 spellings, 1,000 words): said here, not refused later.
+    if (text.length > 60) return setNote("A word can be up to 60 characters.");
+    if (split(heardAs).length > 10)
+      return setNote("Up to 10 spellings a word. Keep the ones it really comes out as.");
+    if (forWhom !== "team" && (await window.subx.dictionary.list()).length >= 1000)
+      return setNote("Your dictionary can hold up to 1,000 words. Remove one you no longer say to add this.");
     setBusy(true);
     try {
       if (team && forWhom === "team") {
