@@ -131,13 +131,16 @@ export function useAccount(): AccountState | null {
  * Dictation time left today, for the whole account. The main process keeps it current from each
  * dictation's own answer, and says when it changed; reading it never waits on the network.
  */
-export function useUsage(): Usage | null {
+export function useUsage(account = ""): Usage | null {
   const [usage, setUsage] = useState<Usage | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new account is the reason to read again.
   useEffect(() => {
+    // Another account signed in: the last one's numbers are not shown while theirs load (Mac 0bb026c).
+    setUsage(null);
     const load = () => void window.subx.auth.usage().then(setUsage);
     load();
     return window.subx.stats.onChanged(load);
-  }, []);
+  }, [account]);
   return usage;
 }
 
@@ -146,7 +149,10 @@ export function useUsage(): Usage | null {
  * when someone returns from paying in the browser), at most every 30 seconds, and when the plan
  * the dictation totals report (`planHint`) changes: never once per dictation.
  */
-export function useBilling(planHint?: string): { billing: Billing | null | undefined; reload: () => void } {
+export function useBilling(
+  planHint?: string,
+  account = "",
+): { billing: Billing | null | undefined; reload: () => void } {
   // undefined: loading; null: the server couldn't be reached.
   const [billing, setBilling] = useState<Billing | null | undefined>(undefined);
   const [readAt, setReadAt] = useState(0);
@@ -154,8 +160,10 @@ export function useBilling(planHint?: string): { billing: Billing | null | undef
     setReadAt(Date.now());
     void window.subx.billing.get().then(setBilling, () => setBilling(null));
   }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: planHint is the reason to read again.
-  useEffect(() => reload(), [reload, planHint]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: planHint and the account are the reasons to read again.
+  useEffect(() => reload(), [reload, planHint, account]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new account clears what is shown.
+  useEffect(() => setBilling(undefined), [account]);
   useEffect(() => {
     const onFocus = () => {
       if (Date.now() - readAt > 30_000) reload();

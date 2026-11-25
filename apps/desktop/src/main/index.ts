@@ -166,8 +166,6 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
     return listener(event, ...args);
   });
 }
-/** ipcMain.on, for our own pages only; anything else is dropped. */
-// biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
 let pillHideTimer: NodeJS.Timeout | undefined;
 /** Applies the pill's visibility, and brings it back on its own when a hide runs out. */
 function showPillAsSet(
@@ -211,6 +209,8 @@ const isChrome = (value: unknown): value is { color: string; symbol: string } =>
   /^#[0-9a-f]{6}$/i.test(String((value as { color?: unknown }).color)) &&
   /^#[0-9a-f]{6}$/i.test(String((value as { symbol?: unknown }).symbol));
 
+/** ipcMain.on, for our own pages only; anything else is dropped. */
+// biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
 function listen(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
   ipcMain.on(channel, (event, ...args) => {
     if (fromOwnPage(event)) listener(event, ...args);

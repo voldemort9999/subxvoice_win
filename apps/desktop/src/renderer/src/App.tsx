@@ -28,8 +28,10 @@ export function App() {
   const info = useAppInfo();
   const launch = useLaunchScene(info);
   const theme = useTheme();
-  const usage = useUsage();
-  const { billing } = useBilling(usage?.plan);
+  // Keyed by who is signed in: the next account never sees the last one's plan or words left.
+  const who = account?.signedIn ? (account.email ?? "") : "";
+  const usage = useUsage(who);
+  const { billing } = useBilling(usage?.plan, who);
   const hotkey = hotkeyLabel(info?.hotkeys[0]?.keys);
   // Ctrl+, opens Settings, as ⌘, does in the Mac app (fbeacae), on the section last open.
   useEffect(() => {

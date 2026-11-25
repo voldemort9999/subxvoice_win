@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { PauseIcon, PlayIcon } from "./icons";
 
 /** Plays the exact audio that was recorded from the microphone. */
+/** One recording plays at a time (the Mac app, fbeacae): starting one pauses the one before. */
+let playingNow: HTMLAudioElement | null = null;
+
 export function AudioButton({ id }: { id: string }) {
   const [playing, setPlaying] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -29,6 +32,8 @@ export function AudioButton({ id }: { id: string }) {
       element.onpause = () => setPlaying(false);
       audio.current = element;
     }
+    if (playingNow && playingNow !== audio.current) playingNow.pause();
+    playingNow = audio.current;
     await audio.current.play();
   }
 
