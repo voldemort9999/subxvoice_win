@@ -1,4 +1,4 @@
-import { HotkeyNote, MicrophoneNote, PermissionsIntro } from "@platform/Chrome";
+import { BAR_PX, HotkeyNote, MicrophoneNote, PermissionsIntro } from "@platform/Chrome";
 import type { MicDevice } from "@subx/core";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { hotkeyLabel } from "../../../shared/hotkey-label";
@@ -1006,19 +1006,25 @@ export function SettingsPanel({ info, onClose }: { info: AppInfo | null; onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div data-settings-panel className="fixed inset-0 z-40 grid place-items-center">
+    // The dimming covers the whole window, Windows' title bar too (its colour follows, useWindowChrome);
+    // the panel sits in the room below that bar.
+    <div
+      data-settings-panel
+      style={{ paddingTop: BAR_PX, ["--bar" as string]: `${BAR_PX}px` }}
+      className="fixed inset-0 z-40 grid place-items-center"
+    >
       <button
         type="button"
         tabIndex={-1}
         aria-label="Close settings"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-[rgb(0_0_0/35%)] animate-[fade_180ms_ease-out]"
+        className="absolute inset-0 cursor-default bg-black/35 animate-[fade_180ms_ease-out]"
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="animate-arrive relative h-[min(720px,calc(100vh-48px))] w-[min(1000px,calc(100vw-64px))] overflow-hidden rounded-[16px] border border-rule bg-page shadow-[0_16px_60px_rgb(0_0_0/25%)]"
+        className="animate-arrive relative h-[min(720px,calc(100vh-48px-var(--bar)))] w-[min(1000px,calc(100vw-64px))] overflow-hidden rounded-[16px] border border-rule bg-page shadow-[0_16px_60px_rgb(0_0_0/25%)]"
       >
         <SettingsPage info={info} onClose={onClose} />
       </div>

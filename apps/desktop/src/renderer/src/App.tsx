@@ -1,4 +1,4 @@
-﻿import { TITLE_BAR_DRAG } from "@platform/Chrome";
+﻿import { TITLE_BAR_DRAG, TitleSpace, useWindowChrome } from "@platform/Chrome";
 import { useEffect, useState } from "react";
 import { hotkeyLabel } from "../../shared/hotkey-label";
 import { DashboardPage, openSettings } from "./pages/DashboardPage";
@@ -41,6 +41,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useWindowChrome();
   // "Change Languages…" and the like in the menu bar.
   useEffect(
     () =>
@@ -68,62 +69,65 @@ export function App() {
   return (
     // The sidebar runs flush to the window's edge, under the traffic lights, and the
     // page is a card set into it. The lights then sit on the sidebar, never on the card's corner.
-    <div className="flex h-full bg-side">
-      <Sidebar
-        page={page}
-        onNavigate={setPage}
-        account={account}
-        usage={usage}
-        billing={billing}
-        onOpenPlan={() => {
-          openSettings("plan", setPage);
-          setSettingsVisit((visit) => visit + 1);
-        }}
-      />
+    <div className="flex h-full flex-col bg-side">
+      <TitleSpace />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          page={page}
+          onNavigate={setPage}
+          account={account}
+          usage={usage}
+          billing={billing}
+          onOpenPlan={() => {
+            openSettings("plan", setPage);
+            setSettingsVisit((visit) => visit + 1);
+          }}
+        />
 
-      <div className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-rule bg-page">
-        {/* Surveyed paper: drawn once per resize, never animated, since this window sits open all day. */}
-        <div className="absolute inset-0">
-          <Contours key={theme} opacity={0.045} />
-        </div>
-        <header
-          className={`relative flex h-[76px] shrink-0 items-end justify-between gap-4 px-9 pb-3 ${TITLE_BAR_DRAG}`}
-        >
-          {page === "dashboard" ? (
-            <>
-              <h1 className="text-[24px] leading-none">{greeting(account.name)}</h1>
-              {/* The shortcut is the user's choice, so it is shown as one: press it to change it. */}
-              <p className="flex items-center gap-2 text-[13px] text-ink-soft">
-                Talk anywhere with
-                <button
-                  type="button"
-                  onClick={() => openSettings("general", setPage)}
-                  title="Change your shortcut"
-                  // The header is the window's drag strip; on a Mac a click there moves the window
-                  // instead of reaching a button, unless the button opts out.
-                  className="kbd text-[13px] transition-transform [-webkit-app-region:no-drag] hover:-translate-y-px"
-                >
-                  {hotkey}
-                </button>
-              </p>
-            </>
-          ) : (
-            <h1 className="text-[24px] leading-none">{TITLES[page]}</h1>
-          )}
-        </header>
-
-        <main className="scroll-area relative flex-1 overflow-y-auto">
-          {/* Keyed by page so each one arrives with a short rise, answering the click that chose it. */}
-          <div key={shown} className="animate-arrive mx-auto max-w-5xl px-8 pt-4 pb-10">
-            {shown === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
-            {page === "insights" && <InsightsPage hotkey={hotkey} />}
-            {page === "dictionary" && <DictionaryPage />}
+        <div className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-rule bg-page">
+          {/* Surveyed paper: drawn once per resize, never animated, since this window sits open all day. */}
+          <div className="absolute inset-0">
+            <Contours key={theme} opacity={0.045} />
           </div>
-        </main>
+          <header
+            className={`relative flex h-[76px] shrink-0 items-end justify-between gap-4 px-9 pb-3 ${TITLE_BAR_DRAG}`}
+          >
+            {page === "dashboard" ? (
+              <>
+                <h1 className="text-[24px] leading-none">{greeting(account.name)}</h1>
+                {/* The shortcut is the user's choice, so it is shown as one: press it to change it. */}
+                <p className="flex items-center gap-2 text-[13px] text-ink-soft">
+                  Talk anywhere with
+                  <button
+                    type="button"
+                    onClick={() => openSettings("general", setPage)}
+                    title="Change your shortcut"
+                    // The header is the window's drag strip; on a Mac a click there moves the window
+                    // instead of reaching a button, unless the button opts out.
+                    className="kbd text-[13px] transition-transform [-webkit-app-region:no-drag] hover:-translate-y-px"
+                  >
+                    {hotkey}
+                  </button>
+                </p>
+              </>
+            ) : (
+              <h1 className="text-[24px] leading-none">{TITLES[page]}</h1>
+            )}
+          </header>
+
+          <main className="scroll-area relative flex-1 overflow-y-auto">
+            {/* Keyed by page so each one arrives with a short rise, answering the click that chose it. */}
+            <div key={shown} className="animate-arrive mx-auto max-w-5xl px-8 pt-4 pb-10">
+              {shown === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
+              {page === "insights" && <InsightsPage hotkey={hotkey} />}
+              {page === "dictionary" && <DictionaryPage />}
+            </div>
+          </main>
+        </div>
+        {page === "settings" && (
+          <SettingsPanel key={settingsVisit} info={info} onClose={() => setPage("dashboard")} />
+        )}
       </div>
-      {page === "settings" && (
-        <SettingsPanel key={settingsVisit} info={info} onClose={() => setPage("dashboard")} />
-      )}
     </div>
   );
 }

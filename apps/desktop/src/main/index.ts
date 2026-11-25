@@ -167,6 +167,15 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
 }
 /** ipcMain.on, for our own pages only; anything else is dropped. */
 // biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
+/** Windows' caption buttons' height; the page's drag strip is the same (platform/win/Chrome.tsx). */
+const TITLE_BAR_HEIGHT = 36;
+
+const isChrome = (value: unknown): value is { color: string; symbol: string } =>
+  typeof value === "object" &&
+  value !== null &&
+  /^#[0-9a-f]{6}$/i.test(String((value as { color?: unknown }).color)) &&
+  /^#[0-9a-f]{6}$/i.test(String((value as { symbol?: unknown }).symbol));
+
 function listen(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
   ipcMain.on(channel, (event, ...args) => {
     if (fromOwnPage(event)) listener(event, ...args);
@@ -243,7 +252,15 @@ function openMainWindow(to?: Navigation): void {
     minWidth: 760,
     minHeight: 520,
     show: false,
-    titleBarStyle: platform.os === "mac" ? "hiddenInset" : "default",
+    // Windows: its own minimise / maximise / close, drawn over the app on the colour behind them
+    // (the page reports it, IPC.windowChrome), so the title bar is part of the app, not a white or
+    // black band from Windows' theme (user, 2026-11-25). The page leaves the strip free and drags by it.
+    ...(platform.os === "mac"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#0f0e0d", symbolColor: "#f2e8c8", height: TITLE_BAR_HEIGHT },
+        }),
     webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
   });
   // Windows draws Electron's File / Edit / View menu under the title; this app has none.
@@ -837,6 +854,11 @@ async function start(): Promise<void> {
   platform.microphone?.use?.(microphoneId);
   platform.microphone?.cleanup?.(voiceCleanup);
   handle(IPC.micDevices, () => platform.microphone?.devices?.() ?? []);
+  listen(IPC.windowChrome, (event, colors: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed() || platform.os === "mac" || !isChrome(colors)) return;
+    window.setTitleBarOverlay({ color: colors.color, symbolColor: colors.symbol, height: TITLE_BAR_HEIGHT });
+  });
   listen(IPC.micMeter, (event, on: unknown) => {
     const sender = event.sender;
     const meter = platform.microphone?.meter;

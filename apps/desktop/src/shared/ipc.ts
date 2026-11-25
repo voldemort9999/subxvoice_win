@@ -12,6 +12,7 @@ import type { PillPlace } from "./pill-place";
 
 export const IPC = {
   appInfo: "app:info",
+  windowChrome: "window:chrome",
   authState: "auth:state",
   authStartEmail: "auth:start-email",
   authVerifyCode: "auth:verify-code",
@@ -459,6 +460,8 @@ export interface SubxApi {
     openRecordingsFolder(): Promise<void>;
     /** The menu bar asking the dashboard to show a page. */
     onNavigate(listener: (to: Navigation) => void): () => void;
+    /** Windows: the colour behind the window's own buttons, so the title bar is the app's. */
+    chrome(colors: { color: string; symbol: string }): void;
   };
   hotkey: {
     /**

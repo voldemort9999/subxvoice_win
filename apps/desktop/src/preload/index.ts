@@ -46,6 +46,7 @@ const api: SubxApi = {
     info: () => ipcRenderer.invoke(IPC.appInfo),
     openRecordingsFolder: () => ipcRenderer.invoke(IPC.openRecordingsFolder),
     onNavigate: (listener) => subscribe(IPC.navigate, listener),
+    chrome: (colors) => ipcRenderer.send(IPC.windowChrome, colors),
   },
   update: {
     state: () => ipcRenderer.invoke(IPC.updateState),

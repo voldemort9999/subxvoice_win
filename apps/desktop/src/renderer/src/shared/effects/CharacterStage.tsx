@@ -41,8 +41,38 @@ interface Layout {
   order: Float32Array;
   person: Float32Array;
   name: Float32Array;
+  /** The logo's wave (blue); `name` is its line. */
+  wave: Float32Array;
   mouth: { x: number; y: number };
   reach: number;
+}
+
+/** The mark on its plate (Brand.swift MarkGeometry.onPlate), its stroke a little heavier for characters. */
+const LOGO = { half: 0.33, stroke: 0.1, amp: 0.075, halves: 4 };
+const DIAG = Math.SQRT1_2;
+
+/** The X's straight stroke, top-left to bottom-right in the unit box. */
+function logoLine(): Path2D {
+  const d = LOGO.half * DIAG;
+  const path = new Path2D();
+  path.moveTo(0.5 - d, 0.5 - d);
+  path.lineTo(0.5 + d, 0.5 + d);
+  return path;
+}
+
+/** The X's wave, along the bottom-left to top-right diagonal. */
+function logoWave(steps = 96): Path2D {
+  const path = new Path2D();
+  const k = (Math.PI * LOGO.halves) / (2 * LOGO.half);
+  for (let i = 0; i <= steps; i++) {
+    const u = -LOGO.half + (2 * LOGO.half * i) / steps;
+    const v = -LOGO.amp * Math.sin(k * (u + LOGO.half));
+    const x = 0.5 + (u + v) * DIAG;
+    const y = 0.5 + (v - u) * DIAG;
+    if (i === 0) path.moveTo(x, y);
+    else path.lineTo(x, y);
+  }
+  return path;
 }
 
 /** `named`: the name sits under the person, so the person is drawn smaller to leave it room. */
@@ -88,6 +118,7 @@ function layout(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, named:
   const y0 = wide ? height * 0.53 - 0.5 * s : height * (named ? 0.08 : 0.09);
   let person = new Float32Array(count);
   let name = new Float32Array(count);
+  let wave = new Float32Array(count);
   if (m) {
     m.fillStyle = "#fff";
     m.save();
@@ -97,36 +128,34 @@ function layout(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, named:
     m.restore();
     person = sample();
     m.clearRect(0, 0, mask.width, mask.height);
-    m.textBaseline = "middle";
-    if (wide) {
-      const w = width * 0.42;
-      m.font = `700 100px ${display()}`;
-      const fitted = Math.min((100 * w) / m.measureText("SUBXVoice").width, s * 0.34);
-      m.font = `700 ${fitted}px ${display()}`;
-      m.fillText("SUBXVoice", width * 0.53, height * 0.53);
-    } else {
-      // Under the person there is only a column's width: the name on one line would be a few rows
-      // of characters high and unreadable, so it is stacked, SUBX over Voice, each as big as fits.
-      const w = width * 0.84;
-      m.font = `700 100px ${display()}`;
-      const widest = Math.max(m.measureText("SUBX").width, m.measureText("Voice").width);
-      const room = height - (y0 + s) - height * 0.06;
-      const fitted = Math.min((100 * w) / widest, room * 0.44);
-      m.font = `800 ${fitted}px ${display()}`;
-      // Fattened with an outline: a stroke one character thick vanishes into the field around it.
-      m.strokeStyle = "#fff";
-      m.lineWidth = fitted * 0.07;
-      m.lineJoin = "round";
-      const top = y0 + s + height * 0.04 + fitted * 0.55;
-      for (const [word, y] of [
-        ["SUBX", top],
-        ["Voice", top + fitted * 0.95],
-      ] as const) {
-        m.fillText(word, width * 0.08, y);
-        m.strokeText(word, width * 0.08, y);
+    // The logo, the X of SUBX, formed of characters beside the person (under them when the window is
+    // narrow): its straight line in cream and its wave in blue, from the mark's own numbers (the Mac
+    // app's MarkGeometry.onPlate), lines a little heavier than the mark's so a few rows of characters
+    // read as a line. It was the name in letters, which at three or four rows a letter read as noise.
+    const box = (() => {
+      if (wide) {
+        const side = Math.min(height * 0.62, width * 0.4);
+        return { x: width * 0.55, y: height * 0.53 - side / 2, side };
       }
-    }
-    name = sample();
+      const top = y0 + s + height * 0.03;
+      const side = Math.max(1, Math.min(width * 0.6, height - top - height * 0.05));
+      return { x: width * 0.5 - side / 2, y: top, side };
+    })();
+    const stroke = (path: Path2D) => {
+      m.clearRect(0, 0, mask.width, mask.height);
+      m.save();
+      m.translate(box.x, box.y);
+      m.scale(box.side, box.side);
+      m.strokeStyle = "#fff";
+      m.lineWidth = LOGO.stroke;
+      m.lineCap = "round";
+      m.lineJoin = "round";
+      m.stroke(path);
+      m.restore();
+      return sample();
+    };
+    name = stroke(logoLine());
+    wave = stroke(logoWave());
   }
 
   return {
@@ -141,6 +170,7 @@ function layout(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, named:
     order: Float32Array.from({ length: count }, Math.random),
     person,
     name,
+    wave,
     mouth: { x: x0 + 0.765 * s, y: y0 + 0.575 * s },
     reach: wide ? width * 0.3 : width * 0.5,
   };
@@ -204,6 +234,10 @@ export function CharacterStage({
           const n = g.name[i] ?? 0;
           if (nameGain > 0 && n > 0)
             lit = Math.max(lit, n * nameGain * clamp01((t - nameFrom - order * 900) / 220));
+          // The wave crosses over the line, in the logo's blue.
+          const w = g.wave[i] ?? 0;
+          const waveLit =
+            nameGain > 0 && w > 0 ? w * nameGain * clamp01((t - nameFrom - order * 900) / 220) : 0;
           const dx = (c + 0.5) * g.cw - g.mouth.x;
           if (dx > 0) {
             const dy = (r + 0.5) * g.ch - g.mouth.y;
@@ -220,12 +254,13 @@ export function CharacterStage({
               }
             }
           }
-          const bright = ring > 0.22 || lit > 0.08;
+          const bright = ring > 0.22 || lit > 0.08 || waveLit > 0.08;
           if (now > (g.next[i] ?? 0)) {
             g.glyph[i] = Math.floor(Math.random() * SET.length);
             g.next[i] = now + (bright ? 250 + Math.random() * 900 : 80 + Math.random() * 2200);
           }
-          if (ring > 0.22) buckets[5 + (ring > 0.65 ? 2 : ring > 0.42 ? 1 : 0)]?.push(i);
+          if (waveLit > 0.08) buckets[5 + (waveLit > 0.65 ? 2 : waveLit > 0.35 ? 1 : 0)]?.push(i);
+          else if (ring > 0.22) buckets[5 + (ring > 0.65 ? 2 : ring > 0.42 ? 1 : 0)]?.push(i);
           else if (lit > 0.08) buckets[1 + Math.min(3, Math.floor(lit * 4))]?.push(i);
           else if (fieldIn > 0) buckets[0]?.push(i);
         }

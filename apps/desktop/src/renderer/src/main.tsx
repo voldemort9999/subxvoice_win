@@ -13,6 +13,7 @@ import "@fontsource-variable/syne";
 import "@fontsource-variable/unbounded";
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/noto-sans-devanagari";
+import { TitleStrip } from "@platform/Chrome";
 import { App } from "./App";
 import { applyStoredTheme } from "./shared/themes";
 import "./styles.css";
@@ -25,5 +26,7 @@ if (!root) throw new Error("#root not found");
 createRoot(root).render(
   <StrictMode>
     <App />
+    {/* Over every screen (launch, sign-in, setup, the app): what the window is dragged by. */}
+    <TitleStrip />
   </StrictMode>,
 );

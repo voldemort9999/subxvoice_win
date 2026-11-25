@@ -28,3 +28,15 @@ export function HotkeyNote() {
 export function MicrophoneNote() {
   return <p>The microphone turns on only while you hold the hotkey, and turns off as soon as you let go.</p>;
 }
+
+/** The Mac's traffic lights sit on the sidebar (hiddenInset): no strip and no colour to report. */
+export function TitleStrip() {
+  return null;
+}
+export function TitleSpace() {
+  return null;
+}
+export function useWindowChrome(): void {}
+
+/** The window's own title bar over the page, in px: Settings' panel sits below it. */
+export const BAR_PX = 0;
