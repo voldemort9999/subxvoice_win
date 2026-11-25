@@ -300,10 +300,7 @@
   user-select: text;
 }
 
-/*
- * A physical key, because the product is a key you hold: cream, raised out of the surface. It is
- * the most embossed thing in the app, since it is the one thing the user presses every time.
- */
+/* A physical key, because the product is a key you hold: a clean cream face over a thin edge. */
 @utility kbd {
   display: inline-grid;
   place-items: center;
@@ -314,42 +311,33 @@
   padding: 0.2rem 0.55rem 0.3rem;
   border-radius: 6px;
   color: #161412;
-  background: linear-gradient(180deg, #fffaea, #e2d5ad);
-  /* The keycap is always cream, in every theme: it is the one physical object on screen. */
+  /* A clean face over a thin edge (the Mac app, 0a93e5a); always cream, the one physical object. */
+  background: #fbf4dc;
   box-shadow:
-    inset 0 1px 0 #fff,
-    inset 0 -2px 0 rgb(var(--shade) / 25%),
-    0 1px 2px rgb(0 0 0 / 30%);
+    0 0 0 1px rgb(0 0 0 / 10%),
+    0 1.5px 0 #cdbf98;
   white-space: nowrap;
 }
 
 /*
- * Emboss and deboss, the one material language of the window: what you press stands up out of the
- * cream (buttons, the key, a toggle's knob); what holds a value is pressed into it (fields, tracks,
- * the stats tray). Never both on one thing, and never on plain sections.
+ * The material of the window, flat since the Mac app's 0a93e5a: what you press is a plain fill with a
+ * hairline (buttons, a toggle's knob), what holds a value is a soft well (fields, tracks, the stats
+ * tray). The heavy look (gradients, inner shadows, coloured glow) is gone; the themes and fonts stay.
  */
 @utility raised {
-  background: linear-gradient(180deg, var(--raised-top), var(--sunk));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--raised-top) 90%, white),
-    inset 0 -2px 0 rgb(var(--shade) / 12%),
-    0 2px 4px -1px rgb(var(--shade) / 22%),
-    0 0 0 1px var(--rule);
+  /* Flat, as the Mac app since 0a93e5a: a plain fill with a hairline, no gradient or inner shadow. */
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--rule-strong);
 }
 @utility raised-accent {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white), var(--accent));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 35%),
-    inset 0 -2px 0 rgb(0 0 30 / 25%),
-    0 8px 18px -10px color-mix(in srgb, var(--accent) 75%, transparent),
-    0 0 0 1px rgb(0 0 0 / 25%);
+  /* The accent one flat colour, without the glow around it. */
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 8%);
 }
 @utility pressed-in {
-  background: var(--sunk);
-  box-shadow:
-    inset 0 2px 4px rgb(var(--shade) / 22%),
-    inset 0 -1px 0 color-mix(in srgb, var(--raised-top) 70%, transparent),
-    0 1px 0 color-mix(in srgb, var(--raised-top) 60%, transparent);
+  /* What holds a value is a soft well, not pressed in (0a93e5a). */
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
 
 .scroll-area {
