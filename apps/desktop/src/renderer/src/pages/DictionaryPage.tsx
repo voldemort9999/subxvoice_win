@@ -1,9 +1,9 @@
 import type { DictionaryEntry, SessionRecord } from "@subx/core";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingFix, TeamInfo } from "../../../shared/ipc";
 import { useHistory, useSettings } from "../shared/hooks";
 import { PencilIcon, SearchIcon, TrashIcon } from "../shared/icons";
-import { Button, Empty, FIELD, Field, IconButton, Notice, Section, Segmented, Toggle } from "../shared/ui";
+import { Button, Empty, FIELD, IconButton, Notice, Section, Segmented, Toggle } from "../shared/ui";
 
 type Filter = "all" | "learned" | "you";
 const FILTERS: { value: Filter; label: string }[] = [
@@ -41,23 +41,10 @@ export function DictionaryPage() {
     pending: [],
     removed: [],
   });
-  const [word, setWord] = useState("");
-  const [heardAs, setHeardAs] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [editing, setEditing] = useState<string | null>(null);
-  const [settings, update] = useSettings();
   const records = useHistory();
-  // In a team: a new word can be the person's own or the whole team's (the user's call, 2026-11-22).
-  const [team, setTeam] = useState<TeamInfo["team"]>(null);
-  const [forWhom, setForWhom] = useState<"me" | "team">("me");
-  const [note, setNote] = useState<string | null>(null);
-  useEffect(() => {
-    void window.subx.team.get().then(
-      (info) => setTeam(info?.team ?? null),
-      () => setTeam(null),
-    );
-  }, []);
 
   const load = useCallback(() => {
     void window.subx.dictionary.list().then(setEntries);
@@ -69,36 +56,14 @@ export function DictionaryPage() {
     window.addEventListener("focus", load);
     // Words added or deleted on another device of this account arrive while the page is open.
     const offElsewhere = window.subx.dictionary.onChanged(load);
+    // A word added from the header's sheet.
+    window.addEventListener(ADDED, load);
     return () => {
       window.removeEventListener("focus", load);
+      window.removeEventListener(ADDED, load);
       offElsewhere();
     };
   }, [load]);
-
-  async function add(event: FormEvent) {
-    event.preventDefault();
-    if (!word.trim()) return;
-    setNote(null);
-    if (team && forWhom === "team") {
-      try {
-        await window.subx.team.words({ upsert: [{ word: word.trim(), misheardAs: split(heardAs) }] });
-        setNote(`Added for everyone in ${team.name}. It's in Settings, Team.`);
-      } catch (error) {
-        setNote(error instanceof Error ? error.message : "Couldn't add it for the team. Try again.");
-        return;
-      }
-    } else {
-      await window.subx.dictionary.upsert({
-        word: word.trim(),
-        misheardAs: split(heardAs),
-        source: "you",
-        addedAt: Date.now(),
-      });
-    }
-    setWord("");
-    setHeardAs("");
-    load();
-  }
 
   async function remove(entryWord: string) {
     await window.subx.dictionary.remove(entryWord);
@@ -141,81 +106,6 @@ export function DictionaryPage() {
 
   return (
     <div className="space-y-10">
-      <Section title="How your dictionary works">
-        <ul className="m-0 grid list-none gap-3 p-0 text-[14px] lg:grid-cols-3">
-          <Explainer title="Heard right">
-            Every word here is sent along with your voice, so names, brands and terms are recognised the first
-            time.
-          </Explainer>
-          <Explainer title="Spelled your way">
-            When a word comes out wrong, the spellings it came out as are listed under it, and SUBXVoice
-            writes the word instead.
-          </Explainer>
-          <Explainer title="Learned from your fixes">
-            Fix a word after it is typed and it is added here. Names after one fix, other words after the same
-            fix twice.
-          </Explainer>
-        </ul>
-      </Section>
-
-      <Section title="Add a word">
-        {team && (
-          <div className="mb-4">
-            <Segmented
-              label="Who the word is for"
-              value={forWhom}
-              onChange={setForWhom}
-              options={[
-                { value: "me", label: "Just me" },
-                { value: "team", label: `Everyone in ${team.name}` },
-              ]}
-            />
-          </div>
-        )}
-        <form onSubmit={add} className="grid items-end gap-3 sm:grid-cols-[1fr_1.4fr_auto]">
-          <label className="space-y-1.5">
-            <span className="font-semibold">Word</span>
-            <input
-              id="dictionary-word"
-              className={FIELD}
-              value={word}
-              onChange={(event) => setWord(event.target.value)}
-              placeholder="SUBXVoice"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="font-semibold">Often comes out as</span>
-            <input
-              id="dictionary-heard"
-              className={`${FIELD} font-mono`}
-              value={heardAs}
-              onChange={(event) => setHeardAs(event.target.value)}
-              placeholder="sub x voice, subex voice"
-            />
-          </label>
-          <Button type="submit" variant="primary" disabled={!word.trim()} className="py-2">
-            Add word
-          </Button>
-        </form>
-        <p className="mt-2 text-xs text-ink-faint">
-          Optional. Separate spellings with commas; each one is replaced with your word wherever it appears.
-          {team ? ` Words for everyone in ${team.name} are shared with the team; your own stay yours.` : ""}
-        </p>
-        {note && (
-          <div className="mt-3">
-            <Notice>{note}</Notice>
-          </div>
-        )}
-      </Section>
-
-      <Field label="Learn from my edits" hint="Off, nothing new is learned; the words already here stay.">
-        <Toggle
-          label="Learn words from my edits"
-          checked={settings?.learnWords ?? true}
-          onChange={(checked) => update({ learnWords: checked })}
-        />
-      </Field>
-
       {learning.pending.length > 0 && (
         <Section title="Waiting for one more fix">
           <p className="-mt-2 mb-3 text-[14px] text-ink-soft">
@@ -339,15 +229,6 @@ export function DictionaryPage() {
         </details>
       )}
     </div>
-  );
-}
-
-function Explainer({ title, children }: { title: string; children: string }) {
-  return (
-    <li className="rounded-[14px] bg-well px-4 py-3">
-      <p className="font-semibold">{title}</p>
-      <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{children}</p>
-    </li>
   );
 }
 
@@ -476,5 +357,155 @@ function EditRow({
         </Button>
       </form>
     </li>
+  );
+}
+
+/** Said by the sheet when it added a word, so the list shows it at once. */
+const ADDED = "subx:dictionary-added";
+
+/**
+ * The Dictionary page's actions, in the header's corner (the Mac app's Shell.swift): whether fixes add
+ * words, and adding one by hand.
+ */
+export function DictionaryActions() {
+  const [settings, update] = useSettings();
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="flex items-center gap-3 [-webkit-app-region:no-drag]">
+      <span
+        className="flex items-center gap-2 text-[13px] text-ink-soft"
+        title="A word you fix after it is typed is added here. Off, nothing new is added; the words already here stay."
+      >
+        Add from my edits
+        <Toggle
+          label="Add words from my edits"
+          checked={settings?.learnWords ?? true}
+          onChange={(checked) => update({ learnWords: checked })}
+        />
+      </span>
+      <Button variant="primary" onClick={() => setAdding(true)} className="py-1.5">
+        Add word
+      </Button>
+      {adding && <AddWordSheet onClose={() => setAdding(false)} />}
+    </div>
+  );
+}
+
+/** Adding a word (the Mac app's AddWordSheet): Enter adds, Esc or a click outside closes. */
+function AddWordSheet({ onClose }: { onClose: () => void }) {
+  const [word, setWord] = useState("");
+  const [heardAs, setHeardAs] = useState("");
+  const [team, setTeam] = useState<TeamInfo["team"]>(null);
+  const [forWhom, setForWhom] = useState<"me" | "team">("me");
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const first = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    first.current?.focus();
+    void window.subx.team.get().then(
+      (info) => setTeam(info?.team ?? null),
+      () => setTeam(null),
+    );
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    const text = word.trim();
+    if (!text || busy) return;
+    setNote(null);
+    setBusy(true);
+    try {
+      if (team && forWhom === "team") {
+        await window.subx.team.words({ upsert: [{ word: text, misheardAs: split(heardAs) }] });
+      } else {
+        await window.subx.dictionary.upsert({
+          word: text,
+          misheardAs: split(heardAs),
+          source: "you",
+          addedAt: Date.now(),
+        });
+      }
+      window.dispatchEvent(new Event(ADDED));
+      onClose();
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : "Couldn't add that word. Try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/35 animate-[fade_180ms_ease-out]"
+      />
+      <form
+        onSubmit={add}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add a word"
+        className="animate-arrive relative w-[min(460px,calc(100vw-48px))] rounded-[16px] border border-rule bg-page p-7 text-ink shadow-[0_14px_48px_rgb(0_0_0/35%)]"
+      >
+        <h2 className="text-[20px]">Add a word</h2>
+        <p className="mt-1 text-ink-soft">Names, brands and terms you say, spelled your way.</p>
+        {team && (
+          <div className="mt-5">
+            <Segmented
+              label="Who the word is for"
+              value={forWhom}
+              onChange={setForWhom}
+              options={[
+                { value: "me", label: "Just me" },
+                { value: "team", label: `Everyone in ${team.name}` },
+              ]}
+            />
+          </div>
+        )}
+        <label className="mt-5 block space-y-1.5">
+          <span className="font-semibold">Word</span>
+          <input
+            ref={first}
+            className={FIELD}
+            value={word}
+            onChange={(event) => setWord(event.target.value)}
+            placeholder="SUBXVoice"
+          />
+        </label>
+        <label className="mt-4 block space-y-1.5">
+          <span className="font-semibold">Often comes out as</span>
+          <input
+            className={`${FIELD} font-mono`}
+            value={heardAs}
+            onChange={(event) => setHeardAs(event.target.value)}
+            placeholder="sub x voice, subex voice"
+          />
+          <span className="block text-xs text-ink-faint">
+            Optional. Separate spellings with commas; each is replaced with your word.
+            {team ? ` Words for everyone in ${team.name} are shared with the team.` : ""}
+          </span>
+        </label>
+        {note && (
+          <div className="mt-4">
+            <Notice>{note}</Notice>
+          </div>
+        )}
+        <div className="mt-6 flex justify-end gap-3">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!word.trim() || busy}>
+            Add word
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

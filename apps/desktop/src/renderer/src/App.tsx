@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { hotkeyLabel } from "../../shared/hotkey-label";
 import { DashboardPage, openSettings } from "./pages/DashboardPage";
-import { DictionaryPage } from "./pages/DictionaryPage";
+import { DictionaryActions, DictionaryPage } from "./pages/DictionaryPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPanel } from "./pages/SettingsPage";
@@ -92,7 +92,7 @@ export function App() {
           <header
             className={`relative flex h-[76px] shrink-0 items-end justify-between gap-4 px-9 pb-3 ${TITLE_BAR_DRAG}`}
           >
-            {page === "dashboard" ? (
+            {shown === "dashboard" ? (
               <>
                 <h1 className="text-[24px] leading-none">{greeting(account.name)}</h1>
                 {/* The shortcut is the user's choice, so it is shown as one: press it to change it. */}
@@ -111,7 +111,10 @@ export function App() {
                 </p>
               </>
             ) : (
-              <h1 className="text-[24px] leading-none">{TITLES[page]}</h1>
+              <>
+                <h1 className="text-[24px] leading-none">{TITLES[shown]}</h1>
+                {shown === "dictionary" && <DictionaryActions />}
+              </>
             )}
           </header>
 
