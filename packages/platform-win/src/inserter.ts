@@ -1,7 +1,7 @@
 import { SubxError, type TextInserter } from "@subx/core";
 import { clipboard } from "electron";
 import { restoreClipboardLater, snapshotClipboard } from "./clipboard";
-import { sendChord, VK, waitForModifiersUp, writePrivateClipboardText } from "./win32";
+import { sendChord, VK, waitForModifiersUp } from "./win32";
 
 export interface InserterDeps {
   /**
@@ -17,6 +17,8 @@ export interface InserterDeps {
   readField?(): Promise<string | null>;
   /** How long to look for the words after pasting. */
   verifyMs?: number;
+  /** Puts the text on the clipboard kept out of clipboard history (win32.ts); false: write it as usual. */
+  writePrivate?(text: string): boolean;
 }
 
 /** A paste lands in tens of ms; a slow app gets this long before the words count as lost. */
@@ -54,7 +56,7 @@ export class WinInserter implements TextInserter {
     const previous = await snapshotClipboard();
     // Kept out of Windows' clipboard history and cloud clipboard (the Mac app's transient mark,
     // fbeacae); if the clipboard was busy, the usual write.
-    if (!writePrivateClipboardText(text)) await clipboard.writeText(text);
+    if (!this.deps.writePrivate?.(text)) await clipboard.writeText(text);
 
     // The user is usually still letting go of the hotkey; pasting now would send Win+V.
     await waitForModifiersUp();

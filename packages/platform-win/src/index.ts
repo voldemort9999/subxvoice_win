@@ -8,7 +8,7 @@ import { WinHotkey } from "./hotkey";
 import { WinInserter } from "./inserter";
 import { WinPermissions } from "./permissions";
 import { WinSystem } from "./system";
-import { foregroundHandle, playWave } from "./win32";
+import { foregroundHandle, playWave, writePrivateClipboardText } from "./win32";
 
 /** The Windows plug, for the same contract the Mac app's platform-mac fills. */
 export function createWinPlatform(): Platform {
@@ -19,6 +19,7 @@ export function createWinPlatform(): Platform {
     hotkey: new WinHotkey(),
     // Pastes only where text can go; elsewhere the pill offers Copy (the Mac app's rule).
     inserter: new WinInserter({
+      writePrivate: writePrivateClipboardText,
       focusTakesText: () => system.focusTakesText(),
       warm: () => system.warm(),
       // Read back after pasting: where the box can be read, the words must be in it.
