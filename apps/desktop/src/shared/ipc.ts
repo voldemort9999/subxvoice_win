@@ -85,6 +85,7 @@ export const IPC = {
   pillPress: "pill:press",
   pillRelease: "pill:release",
   pillHoverReset: "pill:hover-reset",
+  pillMenu: "pill:menu",
   pillArea: "pill:area",
   pillDemo: "pill:demo",
   micChunk: "mic:chunk",
@@ -155,6 +156,8 @@ export interface AppSettings {
   muteAudio: boolean;
   /** Keep the small pill on screen between dictations; off, it appears only while dictating. */
   pillWhenIdle: boolean;
+  /** Hidden from its own menu until this time (ms); 0 when not. It still shows while dictating. */
+  pillHiddenUntil: number;
   /** How long dictations and their recordings are kept on this Mac; older ones are deleted. */
   keepHistory: HistoryKeep;
   pillStyle: PillStyle;
@@ -555,6 +558,8 @@ export interface SubxApi {
      */
     press(): void;
     release(): void;
+    /** A right-click: the pill's own menu (paste or copy the last dictation, hide, settings). */
+    menu(): void;
     /** The pill's drawn size, so its clicks can be caught exactly there. */
     area(size: { width: number; height: number }): void;
     /** The pill moved out from under the pointer, so it is no longer hovered. */

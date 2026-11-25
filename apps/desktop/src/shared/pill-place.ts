@@ -62,3 +62,11 @@ export function alignment(place: PillPlace): {
 export function pillZoom(workAreaWidth: number): number {
   return Math.min(1, Math.max(0.8, Math.round((workAreaWidth / 1800) * 100) / 100));
 }
+
+/** The pill shows between dictations when the setting says so and no hide from its menu is running. */
+export function pillShownNow(
+  s: { pillWhenIdle: boolean; pillHiddenUntil: number },
+  now = Date.now(),
+): boolean {
+  return s.pillWhenIdle && !(s.pillHiddenUntil > now);
+}

@@ -318,6 +318,21 @@ export function SettingsPage({ info, onClose }: { info: AppInfo | null; onClose:
                     checked={settings?.pillWhenIdle ?? true}
                     onChange={(checked) => update({ pillWhenIdle: checked })}
                   />
+                  {/* A hidden pill has no menu of its own to undo the hide from (the Mac app, 7e4b183). */}
+                  {(settings?.pillHiddenUntil ?? 0) > Date.now() && (
+                    <p className="mt-3 flex flex-wrap items-center gap-3 text-ink-soft">
+                      Hidden from its menu until{" "}
+                      {new Date(settings?.pillHiddenUntil ?? 0).toLocaleString([], {
+                        weekday: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                      .
+                      <Button onClick={() => update({ pillHiddenUntil: 0 })} className="py-1">
+                        Show it now
+                      </Button>
+                    </p>
+                  )}
                 </Field>
               </div>
             )}

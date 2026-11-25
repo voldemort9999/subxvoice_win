@@ -17,6 +17,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
+  Menu,
   powerMonitor,
   screen,
   session,
@@ -37,7 +38,7 @@ import {
   type PillState,
   type VoiceSettings,
 } from "../shared/ipc";
-import { isPillPlace } from "../shared/pill-place";
+import { isPillPlace, pillShownNow } from "../shared/pill-place";
 import { markSignedIn, removeUnusedAccounts } from "./account-cleanup";
 import { AccountTotals } from "./account-totals";
 import { Account } from "./auth";
@@ -167,6 +168,19 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
 }
 /** ipcMain.on, for our own pages only; anything else is dropped. */
 // biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
+let pillHideTimer: NodeJS.Timeout | undefined;
+/** Applies the pill's visibility, and brings it back on its own when a hide runs out. */
+function showPillAsSet(
+  pill: { setIdleVisible(on: boolean): void },
+  s: { pillWhenIdle: boolean; pillHiddenUntil: number },
+): void {
+  pill.setIdleVisible(pillShownNow(s));
+  clearTimeout(pillHideTimer);
+  const left = s.pillHiddenUntil - Date.now();
+  if (left > 0)
+    pillHideTimer = setTimeout(() => pill.setIdleVisible(s.pillWhenIdle), Math.min(left, 2 ** 31 - 1));
+}
+
 /** Icons by exe path, read once each: the pill shows one at the start of every dictation. */
 const appIcons = new Map<string, string>();
 
@@ -369,6 +383,12 @@ function assertSettings(value: unknown, accepts: (keys: string) => boolean): Par
   if (typeof input.muteAudio === "boolean") patch.muteAudio = input.muteAudio;
   if (typeof input.voiceCleanup === "boolean") patch.voiceCleanup = input.voiceCleanup;
   if (typeof input.pillWhenIdle === "boolean") patch.pillWhenIdle = input.pillWhenIdle;
+  if (
+    typeof input.pillHiddenUntil === "number" &&
+    Number.isFinite(input.pillHiddenUntil) &&
+    input.pillHiddenUntil >= 0
+  )
+    patch.pillHiddenUntil = input.pillHiddenUntil;
   if (typeof input.learnWords === "boolean") patch.learnWords = input.learnWords;
   if (input.pillStyle === "classic" || input.pillStyle === "line")
     patch.pillStyle = input.pillStyle as AppSettings["pillStyle"];
@@ -532,6 +552,7 @@ async function start(): Promise<void> {
     sounds: true,
     muteAudio: false,
     pillWhenIdle: true,
+    pillHiddenUntil: 0,
     learnWords: true,
     pillPosition: "bottom",
     keepHistory: "forever",
@@ -758,7 +779,7 @@ async function start(): Promise<void> {
     if (permission === "media") return !platform.microphone && !!contents && ownPage(contents.getURL());
     return !!contents && ownPage(contents.getURL());
   });
-  pill.setIdleVisible((await settings.all()).pillWhenIdle);
+  showPillAsSet(pill, await settings.all());
   pill.setPosition((await settings.all()).pillPosition);
   pillWindow = pill;
   // Native mic when the OS plug has one (Mac: Swift helper); otherwise Web Audio in the pill.
@@ -855,7 +876,7 @@ async function start(): Promise<void> {
     applyLaunchAtLogin(next.launchAtLogin);
     platform.microphone?.use?.(next.microphoneId);
     platform.microphone?.cleanup?.(next.voiceCleanup);
-    pill.setIdleVisible(next.pillWhenIdle);
+    showPillAsSet(pill, next);
     pill.setPosition(next.pillPosition);
     void pruneHistory();
     for (const window of BrowserWindow.getAllWindows()) {
@@ -943,6 +964,31 @@ async function start(): Promise<void> {
     else if (pill.showsMicCheck()) openMainWindow({ page: "settings", tab: "general" });
     else openMainWindow();
   }
+  listen(IPC.pillMenu, (event) => {
+    if (!pill.owns(event.sender)) return;
+    void history.recent(1).then(([record]) => {
+      const last = record?.finalText ?? "";
+      const hide = (until: number) => void changeSettings({ pillHiddenUntil: until });
+      const tomorrow = new Date();
+      tomorrow.setHours(24, 0, 0, 0);
+      pill.popup(
+        Menu.buildFromTemplate([
+          {
+            label: "Paste last dictation",
+            enabled: !!last,
+            // The pill never takes the focus, so the app the user was in still has it.
+            click: () => setTimeout(() => void platform.inserter.insert(last), 120),
+          },
+          { label: "Copy last dictation", enabled: !!last, click: () => clipboard.writeText(last) },
+          { type: "separator" },
+          { label: "Hide for 1 hour", click: () => hide(Date.now() + 60 * 60 * 1000) },
+          { label: "Hide until tomorrow", click: () => hide(tomorrow.getTime()) },
+          { type: "separator" },
+          { label: "Pill settings...", click: () => openMainWindow({ page: "settings", tab: "sound" }) },
+        ]),
+      );
+    });
+  });
   listen(IPC.pillDemo, (event, state: unknown) => {
     // From the main window only, and only the states Settings previews.
     if (pill.owns(event.sender) || !isDemoState(state)) return;
@@ -1051,7 +1097,7 @@ async function start(): Promise<void> {
           : null,
         microphoneId: chosen.microphoneId,
         languages: (await voice.current().catch(() => null))?.languages ?? null,
-        pillShown: (await settings.all()).pillWhenIdle,
+        pillShown: pillShownNow(await settings.all()),
         last: records.find((record) => record.finalText)?.finalText ?? null,
       };
     },
@@ -1064,7 +1110,8 @@ async function start(): Promise<void> {
           if (current) return voice.update({ languages: { ...current.languages, hinglish: on } });
         });
       },
-      setPillShown: (on) => void changeSettings({ pillWhenIdle: on }),
+      // On also undoes a hide from the pill's own menu (the Mac app's "Show the pill").
+      setPillShown: (on) => void changeSettings({ pillWhenIdle: on, pillHiddenUntil: 0 }),
       addWord: () => openMainWindow({ page: "dictionary" }),
       copyLast: () => {
         void history.recent(1).then(([record]) => {

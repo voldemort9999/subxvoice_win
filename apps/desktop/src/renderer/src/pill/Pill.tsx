@@ -111,6 +111,11 @@ export function Pill() {
         onPointerDown={pointerDown}
         onPointerUp={pointerUp}
         onPointerCancel={pointerUp}
+        // Right-click: the pill's own menu (paste or copy the last dictation, hide it, its settings).
+        onContextMenu={(event) => {
+          event.preventDefault();
+          window.subx.pill.menu();
+        }}
         title={`Hold ${hotkeyLabel(info?.hotkeys[0]?.keys)} to talk · press twice for hands-free · drag to move`}
         aria-label={
           state.kind === "learned"

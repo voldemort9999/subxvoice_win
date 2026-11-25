@@ -105,6 +105,7 @@ const api: SubxApi = {
     hover: (inside) => ipcRenderer.send(IPC.pillHover, inside),
     press: () => ipcRenderer.send(IPC.pillPress),
     release: () => ipcRenderer.send(IPC.pillRelease),
+    menu: () => ipcRenderer.send(IPC.pillMenu),
     onHoverReset: (listener) => subscribe(IPC.pillHoverReset, listener),
     area: (rect) => ipcRenderer.send(IPC.pillArea, rect),
     demo: (state) => ipcRenderer.send(IPC.pillDemo, state),

@@ -1,5 +1,5 @@
 import type { ClickCatcher } from "@subx/core";
-import { BrowserWindow, type Rectangle, screen, type WebContents } from "electron";
+import { BrowserWindow, type Menu, type Rectangle, screen, type WebContents } from "electron";
 import { IPC, type MicCommand, type PillState } from "../shared/ipc";
 import { alignment, nearestPlace, PILL_PLACES, type PillPlace, pillZoom } from "../shared/pill-place";
 import { DropTargets, type Spot } from "./drop-targets";
@@ -400,6 +400,11 @@ export class PillWindow {
 
   currentKind(): PillState["kind"] {
     return this.kind;
+  }
+
+  /** The pill's own menu, opened at the pointer over it. */
+  popup(menu: Menu): void {
+    if (!this.window.isDestroyed()) menu.popup({ window: this.window });
   }
 
   showsMicCheck(): boolean {
