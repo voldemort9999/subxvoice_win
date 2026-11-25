@@ -167,6 +167,27 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
 }
 /** ipcMain.on, for our own pages only; anything else is dropped. */
 // biome-ignore lint/suspicious/noExplicitAny: mirrors the argument type of Electron's own listeners.
+/** Icons by exe path, read once each: the pill shows one at the start of every dictation. */
+const appIcons = new Map<string, string>();
+
+/**
+ * The icon of the app in front, as a data: URL, for the pill while listening (the Mac app shows the
+ * app the words go into). Windows only: its context gives the exe; our own windows get none.
+ */
+async function frontAppIcon(): Promise<string> {
+  if (platform.os === "mac") return "";
+  const exe = (await platform.context?.current().catch(() => null))?.appId ?? "";
+  if (!/\.exe$/i.test(exe) || /(SUBXVoice|electron)\.exe$/i.test(exe)) return "";
+  const known = appIcons.get(exe);
+  if (known !== undefined) return known;
+  const icon = await app
+    .getFileIcon(exe, { size: "normal" })
+    .then((image) => (image.isEmpty() ? "" : image.toDataURL()))
+    .catch(() => "");
+  appIcons.set(exe, icon);
+  return icon;
+}
+
 /** Windows' caption buttons' height; the page's drag strip is the same (platform/win/Chrome.tsx). */
 const TITLE_BAR_HEIGHT = 36;
 
@@ -781,6 +802,9 @@ async function start(): Promise<void> {
         if (on) {
           void learner.settle();
           platform.inserter.prepare?.();
+          void frontAppIcon().then((icon) => {
+            if (icon && live) dictation.appIcon(icon);
+          });
         }
         platform.hotkey.watchEscape?.(on);
         clearTimeout(muteTimer);

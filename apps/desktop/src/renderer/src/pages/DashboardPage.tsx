@@ -1,5 +1,6 @@
 import type { DictionaryEntry } from "@subx/core";
 import { useEffect, useState } from "react";
+import { dayKey } from "../../../shared/day-key";
 import { formatCount, formatSpan } from "../shared/format";
 import { HistoryList } from "../shared/HistoryList";
 import { useDayTotals, useHistory, usePermissions } from "../shared/hooks";
@@ -34,6 +35,8 @@ export function DashboardPage({
   const total = sumTotals(days);
   const streak = streakOfTotals(days);
   const speed = speedOf(total);
+  // Today beside the total: the day's own progress is what moves while they work.
+  const today = days[dayKey(Date.now())];
 
   return (
     <div className="space-y-10">
@@ -50,12 +53,18 @@ export function DashboardPage({
 
       <section
         aria-label="Your numbers"
-        className="grid grid-cols-2 gap-y-5 rounded-[18px] border border-rule bg-paper px-7 py-6 md:grid-cols-4"
+        className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-[18px] border border-rule bg-paper px-7 py-6 md:grid-cols-5"
       >
         <Stat
           label="Dictated words"
           value={formatCount(total.words)}
           unit={total.words === 1 ? "word" : "words"}
+        />
+        <Stat
+          label="Today"
+          value={formatCount(today?.words ?? 0)}
+          unit={today?.words === 1 ? "word" : "words"}
+          note={`${formatCount(today?.dictations ?? 0)} ${today?.dictations === 1 ? "dictation" : "dictations"}`}
         />
         <Stat label="Time saved" value={formatSpan(savedMsOf(total))} />
         <Stat label="Day streak" value={String(streak)} unit={streak === 1 ? "day" : "days"} />
@@ -78,14 +87,16 @@ export function DashboardPage({
   );
 }
 
-function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function Stat({ label, value, unit, note }: { label: string; value: string; unit?: string; note?: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-ink-soft">{label}</p>
-      <p className="figure mt-1.5 text-[28px]">
+      <p className="truncate text-ink-soft">{label}</p>
+      {/* Five side by side in a narrow window: the figure gives a little rather than being cut off. */}
+      <p className="figure mt-1.5 text-[clamp(20px,2.3vw,28px)] whitespace-nowrap">
         {value}
         {unit && <span className="ml-1.5 font-sans text-[14px] font-normal text-ink-soft">{unit}</span>}
       </p>
+      {note && <p className="mt-0.5 truncate text-xs text-ink-soft">{note}</p>}
     </div>
   );
 }

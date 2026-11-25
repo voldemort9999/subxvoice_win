@@ -103,8 +103,12 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, look = "clas
             <VoiceLine levels={levels} color={c.accentHex} />
           ) : (
             <>
-              {/* Recording, like the dot on a camera: the one constant sign the mic is open. */}
-              <span className={`h-2 w-2 shrink-0 rounded-full ${c.accentBg} animate-pulse`} />
+              {/* The app the words go into (the Mac app's pill); without one, the recording dot. */}
+              {state.kind === "listening" && state.icon ? (
+                <img src={state.icon} alt="" className="h-[18px] w-[18px] shrink-0" draggable={false} />
+              ) : (
+                <span className={`h-2 w-2 shrink-0 rounded-full ${c.accentBg} animate-pulse`} />
+              )}
               <Bars levels={levels} c={c} />
             </>
           )}

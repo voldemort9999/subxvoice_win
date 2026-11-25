@@ -355,7 +355,8 @@ export interface PermissionStatus {
 export type PillState =
   | { kind: "idle" }
   /** `text` is what has been heard so far; `locked` is hands-free (the key is no longer held). */
-  | { kind: "listening"; locked?: boolean }
+  /** `icon`: the app the words will go into, as a data: URL (Windows: its exe's icon). */
+  | { kind: "listening"; locked?: boolean; icon?: string }
   /** `message` carries the finished words while they are pasted. */
   | { kind: "processing"; message?: string }
   /** `warning` says the words went in, but not in the script that was asked for. */

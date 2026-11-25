@@ -129,6 +129,9 @@ describe("DictationController", () => {
     // Still listening long after both taps: the second press locked it, nothing cancelled it.
     expect(run.cancelled).toBe(false);
     expect(states.at(-1)).toEqual({ kind: "listening", locked: true });
+    // The app the words will go into, shown while listening (the Mac app's pill).
+    controller.appIcon("data:image/png;base64,AA");
+    expect(states.at(-1)).toEqual({ kind: "listening", locked: true, icon: "data:image/png;base64,AA" });
 
     now = 5000;
     controller.handleHotkey({ type: "pressed", mode: "exact" });
