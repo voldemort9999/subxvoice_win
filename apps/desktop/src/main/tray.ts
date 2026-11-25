@@ -87,8 +87,8 @@ export function menu(state: TrayState, actions: TrayActions): MenuItemConstructo
     },
     { type: "separator" },
     { label: "Open SUBXVoice", click: actions.open },
-    { label: "Settings…", click: () => actions.openSettings("general") },
-    { label: "Check for Updates…", click: actions.checkForUpdates },
+    { label: "Settings...", click: () => actions.openSettings("general") },
+    { label: "Check for Updates...", click: actions.checkForUpdates },
     { type: "separator" },
     { label: "Quit SUBXVoice", role: "quit" },
   );
@@ -140,7 +140,7 @@ function languages(state: TrayState, actions: TrayActions): MenuItemConstructorO
       click: () => actions.setHinglish(!set?.hinglish),
     },
     { type: "separator" },
-    { label: "Change Languages…", click: () => actions.openSettings("dictation") },
+    { label: "Change Languages...", click: () => actions.openSettings("dictation") },
   ];
 }
 
@@ -164,7 +164,7 @@ function todayLine({ words, dictations }: TrayState["today"]): string {
 
 function preview(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
-  return line.length > 40 ? `“${line.slice(0, 39).trimEnd()}…”` : `“${line}”`;
+  return line.length > 40 ? `"${line.slice(0, 39).trimEnd()}..."` : `"${line}"`;
 }
 
 /** "hi" → "Hindi", in English; the code itself if the system does not know it. */

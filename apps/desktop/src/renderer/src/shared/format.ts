@@ -9,12 +9,6 @@ export function formatDuration(ms: number): string {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
-export function formatSpeechTotal(ms: number): string {
-  if (ms < 60_000) return `${Math.round(ms / 1000)} seconds`;
-  const minutes = ms / 60_000;
-  return `${minutes < 10 ? minutes.toFixed(1) : Math.round(minutes)} minutes`;
-}
-
 /**
  * A span of time as a person would say it: "4m", "1h 12m", "2 days". Used for totals like time
  * saved, where minutes stop being meaningful once there are hours of them.

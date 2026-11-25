@@ -1,7 +1,17 @@
 // The account's settings on our backend (subxvoice-api `/v1/settings`), for the screens that edit
 // them. The renderer never touches the network, so it asks here; this is the only place that
 // knows the address and the token.
-import type { AccountDevice, Usage, VoiceSettings } from "../shared/ipc";
+
+import { timeZoneHeader } from "@subx/providers";
+import type {
+  AccountDevice,
+  Billing,
+  BillingInterval,
+  SeatsQuote,
+  TeamInfo,
+  Usage,
+  VoiceSettings,
+} from "../shared/ipc";
 
 /** A value with the settings version it was read or written at (null from an older server). */
 export interface Versioned<T> {
@@ -40,6 +50,30 @@ export interface Backend {
   stats(): Promise<Stats>;
   devices(): Promise<AccountDevice[]>;
   languages(): Promise<string[]>;
+  /** The account's plan and the plans on offer. */
+  billing(): Promise<Billing>;
+  /** A payment page for the plan; its address is opened in the browser. */
+  /** `once`: paid once, no autopay; `seats`: how many a team paid once is for. */
+  checkout(choice: {
+    plan: "pro" | "power";
+    interval: BillingInterval;
+    once?: boolean;
+    seats?: number;
+  }): Promise<{ url: string }>;
+  portal(): Promise<{ url: string }>;
+  /** What `add` more seats for a team paid once cost, for the months it has left. */
+  seatsQuote(add: number): Promise<SeatsQuote>;
+  /** A payment page for those seats. */
+  addSeats(add: number): Promise<{ url: string }>;
+  team(): Promise<TeamInfo>;
+  saveTeam(name: string): Promise<void>;
+  invite(email: string, admin: boolean): Promise<void>;
+  removeMember(email: string): Promise<void>;
+  changeTeamWords(change: {
+    upsert?: { word: string; misheardAs: string[] }[];
+    remove?: string[];
+  }): Promise<void>;
+  leaveTeam(): Promise<void>;
   /** Removes everything the server keeps for the signed-in account (settings, dictionary, usage). */
   deleteAccount(): Promise<void>;
 }
@@ -75,6 +109,7 @@ export function createBackend(
           "content-type": "application/json",
           "x-subx-client": client,
           ...(device ? { "x-subx-device": device } : {}),
+          ...timeZoneHeader(),
         },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
@@ -91,6 +126,14 @@ export function createBackend(
         message?: string;
         problems?: string[];
       } | null;
+      // Billing answers are written for people ("This account already has a plan..."): shown as is.
+      if (
+        body?.message &&
+        (response.status === 409 ||
+          ((response.status === 503 || response.status === 404) && path.startsWith("/v1/billing")) ||
+          (response.status === 400 && path.startsWith("/v1/team")))
+      )
+        throw new Error(body.message);
       throw new Error(
         settingProblem(body?.problems) ?? "Something went wrong on our side. Try again in a moment.",
       );
@@ -117,6 +160,29 @@ export function createBackend(
     stats: () => call<Stats>("/v1/stats"),
     devices: async () => (await call<{ devices: AccountDevice[] }>("/v1/devices")).devices,
     languages: async () => (await call<{ languages: string[] }>("/v1/languages")).languages,
+    billing: () => call<Billing>("/v1/billing"),
+    checkout: (choice) =>
+      call<{ url: string }>("/v1/billing/checkout", { method: "POST", body: JSON.stringify(choice) }),
+    portal: () => call<{ url: string }>("/v1/billing/portal", { method: "POST" }),
+    seatsQuote: (add) => call<SeatsQuote>(`/v1/billing/seats?add=${encodeURIComponent(String(add))}`),
+    addSeats: (add) =>
+      call<{ url: string }>("/v1/billing/seats", { method: "POST", body: JSON.stringify({ add }) }),
+    team: () => call<TeamInfo>("/v1/team"),
+    saveTeam: async (name) => {
+      await call("/v1/team", { method: "POST", body: JSON.stringify({ name }) });
+    },
+    invite: async (email, admin) => {
+      await call("/v1/team/members", { method: "POST", body: JSON.stringify({ email, admin }) });
+    },
+    removeMember: async (email) => {
+      await call(`/v1/team/members/${encodeURIComponent(email)}`, { method: "DELETE" });
+    },
+    changeTeamWords: async (change) => {
+      await call("/v1/team/words", { method: "POST", body: JSON.stringify(change) });
+    },
+    leaveTeam: async () => {
+      await call("/v1/team/leave", { method: "POST" });
+    },
     deleteAccount: async () => {
       await call<unknown>("/v1/account", { method: "DELETE" });
     },

@@ -66,7 +66,12 @@ describe("SUBXVoice /v1/dictate plug", () => {
   it("connects with the user's session, holds early audio, and says which app", async () => {
     const { stream, socket } = await start("WhatsApp");
     expect(socket.url).toBe("ws://127.0.0.1:8080/v1/dictate");
-    expect(socket.init.headers).toEqual({ Authorization: "Bearer dev:aryan", "x-subx-client": "mac/0.0.1" });
+    expect(socket.init.headers).toEqual({
+      Authorization: "Bearer dev:aryan",
+      "x-subx-client": "mac/0.0.1",
+      // Where the person is: their week (when free words come back) follows it.
+      "x-subx-tz": Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     stream.push(new Int16Array([1, 2, 3]));
     expect(socket.sent).toHaveLength(0);
     socket.open();
@@ -127,8 +132,23 @@ describe("SUBXVoice /v1/dictate plug", () => {
   it("says what the server's refusal means, in the app's words", async () => {
     const { stream, socket } = await start();
     socket.open();
-    socket.deliver({ type: "error", code: "daily_limit", message: "Today's dictation time is used up." });
-    await expect(stream.finish()).rejects.toThrow("You've used today's dictation time. It resets tomorrow.");
+    socket.deliver({
+      type: "error",
+      code: "daily_limit",
+      message: "You've used this week's free words. They come back on Monday.",
+    });
+    await expect(stream.finish()).rejects.toThrow(
+      "You've used this week's free words. They come back on Monday.",
+    );
+  });
+
+  it("says the service is busy, in plain words, when it is full", async () => {
+    const { stream, socket } = await start();
+    socket.open();
+    socket.deliver({ type: "error", code: "busy", message: "anything" });
+    await expect(stream.finish()).rejects.toThrow(
+      "Many people are dictating right now. Try again in a moment.",
+    );
   });
 
   // The server's security audit, 2026-11-20: two open dictations per account, capped message size.

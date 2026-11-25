@@ -74,7 +74,7 @@ export function HotkeyRecorder({
             recording ? "border-accent bg-accent text-on-accent" : ""
           }`}
         >
-          {recording ? (held ? hotkeyLabel(held) : "Press keys…") : hotkeyLabel(value)}
+          {recording ? (held ? hotkeyLabel(held) : "Press keys...") : hotkeyLabel(value)}
         </kbd>
         {recording ? (
           <Button onClick={() => setRecording(false)}>Cancel</Button>
@@ -88,7 +88,7 @@ export function HotkeyRecorder({
       <p className="mt-2 text-xs text-ink-faint">
         {recording
           ? "Hold the keys you want, then let go. Esc to cancel."
-          : "Two or more keys together, or a single F1–F24, Pause, Scroll Lock, Right Ctrl or Right Alt. A single key also reaches the app you're in, so pick one it doesn't use. A laptop's Fn key works only if the laptop tells Windows about it; most don't."}
+          : "Two or more keys together, or a single F1-F24, Pause, Scroll Lock, Right Ctrl or Right Alt. A single key also reaches the app you're in, so pick one it doesn't use. A laptop's Fn key works only if the laptop tells Windows about it; most don't."}
       </p>
       {problem && !recording && (
         <p role="alert" className="mt-1.5 text-xs font-medium text-accent-ink">

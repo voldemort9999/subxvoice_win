@@ -59,7 +59,7 @@ import { JsonDictionaryStore, JsonFile, JsonSettingsStore } from "./stores";
 import { createTray } from "./tray";
 import { checkForUpdate, installUpdate, startUpdater, updateState } from "./updater";
 import { VoiceSettingsCopy } from "./voice";
-import { createWorkflow } from "./workflow";
+import { allowanceProblem, createWorkflow } from "./workflow";
 
 // First, so nothing that goes wrong from here on can show a stack trace on screen.
 guardAgainstCrashDialogs();
@@ -179,6 +179,8 @@ let account: Account;
 /** Reported by the renderer, which is the only side with MediaDevices. */
 let microphones: MicrophoneOption[] = [];
 let mainWindow: BrowserWindow | null = null;
+/** Hotkey registrations refused in a row (Input Monitoring); a successful one resets it. */
+let hotkeyRefusals = 0;
 /** Set once the account's numbers exist: the window coming to the front may refresh them. */
 let onMainWindowFocus: () => void = () => {};
 /** Held at module scope so opening the app can revive it; built in start(). */
@@ -278,6 +280,13 @@ function asText(value: unknown, field: string): string {
     throw new Error(`Enter a valid ${field}.`);
   }
   return value.trim();
+}
+
+/** A seat count from the renderer: a whole number the server would accept (it checks again). */
+function seatCount(value: unknown): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1 || n > 500) throw new Error("Enter between 1 and 500 seats.");
+  return n;
 }
 
 function assertPermissionKind(kind: unknown): PermissionKind {
@@ -537,6 +546,52 @@ async function start(): Promise<void> {
   handle(IPC.authSignOut, () => account.signOut());
   handle(IPC.authUsage, () => accountTotals.usage());
   handle(IPC.accountDevices, () => backend.devices());
+  handle(IPC.billingGet, () => backend.billing().catch(() => null));
+  // The payment pages open in the browser: payment details never pass through this app.
+  const openPaymentPage = async (url: string) => {
+    if (!/^https:\/\//.test(url)) throw new Error("The payment page didn't open. Try again in a moment.");
+    await shell.openExternal(url);
+  };
+  handle(IPC.billingCheckout, async (_event, choice: unknown) => {
+    const c = (choice ?? {}) as Record<string, unknown>;
+    const { url } = await backend.checkout({
+      plan: c.plan === "power" ? "power" : "pro",
+      interval: c.interval === "year" ? "year" : "month",
+      ...(c.once === true ? { once: true } : {}),
+      ...(typeof c.seats === "number" ? { seats: seatCount(c.seats) } : {}),
+    });
+    await openPaymentPage(url);
+  });
+  handle(IPC.billingSeatsQuote, (_event, add: unknown) => backend.seatsQuote(seatCount(add)));
+  handle(IPC.billingSeatsBuy, async (_event, add: unknown) =>
+    openPaymentPage((await backend.addSeats(seatCount(add))).url),
+  );
+  handle(IPC.teamGet, () => backend.team().catch(() => null));
+  handle(IPC.teamSave, (_event, name: unknown) => backend.saveTeam(asText(name, "team name")));
+  handle(IPC.teamInvite, (_event, email: unknown, admin: unknown) =>
+    backend.invite(asText(email, "email"), admin === true),
+  );
+  handle(IPC.teamRemove, (_event, email: unknown) => backend.removeMember(asText(email, "email")));
+  handle(IPC.teamWords, (_event, change: unknown) => {
+    const c = (change ?? {}) as { upsert?: unknown; remove?: unknown };
+    const upsert = Array.isArray(c.upsert)
+      ? c.upsert
+          .filter(
+            (w): w is { word: string; misheardAs?: unknown } =>
+              typeof (w as { word?: unknown })?.word === "string",
+          )
+          .map((w) => ({
+            word: w.word,
+            misheardAs: Array.isArray(w.misheardAs)
+              ? w.misheardAs.filter((m): m is string => typeof m === "string")
+              : [],
+          }))
+      : [];
+    const remove = Array.isArray(c.remove) ? c.remove.filter((w): w is string => typeof w === "string") : [];
+    return backend.changeTeamWords({ upsert, remove });
+  });
+  handle(IPC.teamLeave, () => backend.leaveTeam());
+  handle(IPC.billingPortal, async () => openPaymentPage((await backend.portal()).url));
   handle(IPC.authSetProfile, (_event, name: unknown) => account.setProfile(asText(name, "name")));
   account.onChanged((state) => {
     // Switching accounts switches the data with it, and signing out puts it out of reach.
@@ -571,7 +626,19 @@ async function start(): Promise<void> {
 
   handle(IPC.permissionList, async (): Promise<PermissionStatus[]> => {
     const kinds = platform.permissions.required();
-    return Promise.all(kinds.map(async (kind) => ({ kind, state: await platform.permissions.status(kind) })));
+    return Promise.all(
+      kinds.map(async (kind) => {
+        const state = await platform.permissions.status(kind);
+        // Allowed in System Settings, yet the hotkey is still refused (twice, even from a fresh
+        // helper): this run needs a restart before macOS lets it listen.
+        const stuck = kind === "input_monitoring" && state === "granted" && hotkeyRefusals >= 2;
+        return stuck ? { kind, state, restartNeeded: true as const } : { kind, state };
+      }),
+    );
+  });
+  handle(IPC.appRestart, () => {
+    app.relaunch();
+    app.exit(0);
   });
   handle(IPC.permissionRequest, (_event, kind: unknown) =>
     platform.permissions.request(assertPermissionKind(kind)),
@@ -678,9 +745,9 @@ async function start(): Promise<void> {
       signedIn: async () => (await account.state()).signedIn,
       account: () => accountDir,
       // Only when a dictation could not start: asked fresh, since it decides what the pill says.
-      remainingSeconds: async () => {
+      allowanceProblem: async () => {
         await accountTotals.refresh(true);
-        return (await accountTotals.usage())?.remaining ?? null;
+        return allowanceProblem(await accountTotals.usage());
       },
       onHistoryChanged: notifyHistoryChanged,
       onPasted: (text, app) => void learner.pasted(text, app),
@@ -879,9 +946,13 @@ async function start(): Promise<void> {
     }
     await platform.hotkey
       .register(await bindings(), (event) => dictation.handleHotkey(event))
+      .then(() => {
+        hotkeyRefusals = 0;
+      })
       .catch((error: unknown) => {
         // Missing permission: keep trying, so the hotkey starts working as soon as it is granted.
         if (error instanceof SubxError && error.code === "permission_denied") {
+          hotkeyRefusals++;
           hotkeyRetry = setTimeout(registerHotkey, HOTKEY_RETRY_MS);
         } else {
           console.error("Hotkey unavailable:", error);
@@ -981,7 +1052,9 @@ async function start(): Promise<void> {
  */
 app.on("web-contents-created", (_event, contents) => {
   const toBrowser = (url: string) => {
-    if (/^https:\/\//.test(url)) void shell.openExternal(url);
+    // Mail to support opens the mail app; nothing else but web pages leaves the window.
+    if (/^https:\/\//.test(url) || /^mailto:support@subxvoice\.app(\?|$)/.test(url))
+      void shell.openExternal(url);
   };
   contents.setWindowOpenHandler(({ url }) => {
     toBrowser(url);

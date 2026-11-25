@@ -73,7 +73,7 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
             <>
               You said <strong className="font-semibold">{formatWords(words)}</strong>
               {pages >= 0.5 && (
-                <> — about {pages < 1.5 ? "a page" : `${Math.round(pages)} pages`} of a book —</>
+                <> (about {pages < 1.5 ? "a page" : `${Math.round(pages)} pages`} of a book)</>
               )}{" "}
               and skipped <strong className="font-semibold">{formatSpan(saved)}</strong> of typing.
             </>
@@ -94,7 +94,7 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
         />
         <Figure
           label="Your words"
-          value={learned === null ? "—" : formatCount(learned)}
+          value={learned === null ? "-" : formatCount(learned)}
           note="In your dictionary"
         />
       </Figures>
@@ -183,7 +183,7 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
         <Figures>
           <Figure
             label="Fastest"
-            value={bests.fastest ? String(bests.fastest) : "—"}
+            value={bests.fastest ? String(bests.fastest) : "-"}
             unit={bests.fastest ? "wpm" : undefined}
             note="One dictation"
           />
@@ -195,7 +195,7 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
           />
           <Figure
             label="Best day"
-            value={bests.bestDay ? formatCount(bests.bestDay.words) : "—"}
+            value={bests.bestDay ? formatCount(bests.bestDay.words) : "-"}
             unit={bests.bestDay ? (bests.bestDay.words === 1 ? "word" : "words") : undefined}
             note={
               bests.bestDay
@@ -319,7 +319,7 @@ function HourStrip({ hours }: { hours: number[] }) {
                   ? `color-mix(in oklab, var(--ink) ${Math.round((count / max) * 85 + 15)}%, var(--page))`
                   : "var(--well)",
               }}
-              title={`${hourName(hour)} — ${count} ${count === 1 ? "dictation" : "dictations"}`}
+              title={`${hourName(hour)} - ${count} ${count === 1 ? "dictation" : "dictations"}`}
             />
           );
         })}

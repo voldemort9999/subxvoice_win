@@ -21,6 +21,24 @@ const api: SubxApi = {
     usage: () => ipcRenderer.invoke(IPC.authUsage),
     devices: () => ipcRenderer.invoke(IPC.accountDevices),
     onChanged: (listener) => subscribe(IPC.authChanged, listener),
+    accounts: () => ipcRenderer.invoke(IPC.authAccounts),
+    switchTo: (id) => ipcRenderer.invoke(IPC.authSwitch, id),
+    addAccount: () => ipcRenderer.invoke(IPC.authAddAccount),
+  },
+  team: {
+    get: () => ipcRenderer.invoke(IPC.teamGet),
+    save: (name) => ipcRenderer.invoke(IPC.teamSave, name),
+    invite: (email, admin) => ipcRenderer.invoke(IPC.teamInvite, email, admin === true),
+    remove: (email) => ipcRenderer.invoke(IPC.teamRemove, email),
+    words: (change) => ipcRenderer.invoke(IPC.teamWords, change),
+    leave: () => ipcRenderer.invoke(IPC.teamLeave),
+  },
+  billing: {
+    get: () => ipcRenderer.invoke(IPC.billingGet),
+    checkout: (choice) => ipcRenderer.invoke(IPC.billingCheckout, choice),
+    portal: () => ipcRenderer.invoke(IPC.billingPortal),
+    seatsQuote: (add) => ipcRenderer.invoke(IPC.billingSeatsQuote, add),
+    addSeats: (add) => ipcRenderer.invoke(IPC.billingSeatsBuy, add),
   },
   voice: {
     settings: () => ipcRenderer.invoke(IPC.voiceSettingsGet),
@@ -42,6 +60,7 @@ const api: SubxApi = {
     list: () => ipcRenderer.invoke(IPC.permissionList),
     request: (kind) => ipcRenderer.invoke(IPC.permissionRequest, kind),
     openSettings: (kind) => ipcRenderer.invoke(IPC.permissionOpenSettings, kind),
+    restartApp: () => ipcRenderer.invoke(IPC.appRestart),
   },
   history: {
     list: () => ipcRenderer.invoke(IPC.historyList),

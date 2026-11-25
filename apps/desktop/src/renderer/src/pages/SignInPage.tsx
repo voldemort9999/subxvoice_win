@@ -138,7 +138,7 @@ export function SignInPage({ lastGoogle }: { lastGoogle: LastGoogleAccount | nul
             busy={busy}
             className="w-full py-2.5"
           >
-            {busy ? <Working label="Signing in…" onAccent /> : "Continue"}
+            {busy ? <Working label="Signing in..." onAccent /> : "Continue"}
           </Button>
         </form>
 
@@ -195,7 +195,7 @@ export function SignInPage({ lastGoogle }: { lastGoogle: LastGoogleAccount | nul
           </div>
           <Button className="mt-4 w-full py-2.5" busy={googleOpen} onClick={() => google(false)}>
             {googleOpen ? (
-              <Working label="Finish in your browser…" />
+              <Working label="Finish in your browser..." />
             ) : (
               <span className="inline-flex items-center justify-center gap-2.5">
                 <GoogleMark />
@@ -210,7 +210,7 @@ export function SignInPage({ lastGoogle }: { lastGoogle: LastGoogleAccount | nul
       ) : (
         <Button className="w-full py-2.5" busy={googleOpen} onClick={() => google(true)}>
           {googleOpen ? (
-            <Working label="Finish in your browser…" />
+            <Working label="Finish in your browser..." />
           ) : (
             <span className="inline-flex items-center justify-center gap-2.5">
               <GoogleMark />
@@ -240,7 +240,7 @@ export function SignInPage({ lastGoogle }: { lastGoogle: LastGoogleAccount | nul
         </Labelled>
         {problem && <Notice role="alert">{problem}</Notice>}
         <Button type="submit" variant="primary" busy={busy} className="w-full py-2.5">
-          {busy ? <Working label="Sending your email…" onAccent /> : "Continue with email"}
+          {busy ? <Working label="Sending your email..." onAccent /> : "Continue with email"}
         </Button>
       </form>
 

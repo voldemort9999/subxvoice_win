@@ -206,7 +206,7 @@ export function OnboardingPage({
             )}
 
             <Button variant="primary" onClick={finish} busy={busy} className="mt-7 w-full py-2.5">
-              {busy ? <Working label="Getting ready…" onAccent /> : `Start with ${hotkeyLabel(hotkey)}`}
+              {busy ? <Working label="Getting ready..." onAccent /> : `Start with ${hotkeyLabel(hotkey)}`}
             </Button>
             <BackButton onClick={() => setStep("hotkey")} />
           </div>
@@ -315,7 +315,7 @@ function AccessStep({ onDone, onBack }: { onDone: () => void; onBack: () => void
             onClick={() => void allowAll()}
             className="mt-7 w-full py-2.5"
           >
-            {asking ? <Working label="Opening Windows Settings…" onAccent /> : "Allow"}
+            {asking ? <Working label="Opening Windows Settings..." onAccent /> : "Allow"}
           </Button>
           <button
             type="button"

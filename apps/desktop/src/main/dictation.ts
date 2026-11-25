@@ -253,7 +253,7 @@ export class DictationController {
     const watchdog = setTimeout(() => {
       if (this.state !== "processing") return;
       console.log(`dictation: stuck for ${STUCK_MS / 1000} s at "${this.stage}" — released`);
-      this.showResult({ kind: "error", message: "That took too long — try again" });
+      this.showResult({ kind: "error", message: "That took too long. Try again." });
     }, STUCK_MS);
     this.stage = "stopping the microphone";
     await this.mic.stop();
@@ -270,7 +270,7 @@ export class DictationController {
       // what keeps "processing" from outliving the run — the pill stuck on "•••" came from this.
       if (this.state === "processing") {
         console.log("dictation: released with no speech stream — nothing to finish");
-        this.showResult({ kind: "error", message: "Couldn't start listening — try again" });
+        this.showResult({ kind: "error", message: "Couldn't start listening. Try again." });
       }
       return;
     }

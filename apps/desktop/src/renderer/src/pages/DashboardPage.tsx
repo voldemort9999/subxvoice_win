@@ -59,7 +59,7 @@ export function DashboardPage({
         />
         <Stat label="Time saved" value={formatSpan(savedMsOf(total))} />
         <Stat label="Day streak" value={String(streak)} unit={streak === 1 ? "day" : "days"} />
-        <Stat label="Average speed" value={speed ? String(speed) : "—"} unit={speed ? "wpm" : undefined} />
+        <Stat label="Average speed" value={speed ? String(speed) : "-"} unit={speed ? "wpm" : undefined} />
       </section>
 
       <LearningCenter

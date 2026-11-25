@@ -101,7 +101,7 @@ describe("DictationController", () => {
     now = 1000;
     controller.handleHotkey({ type: "released", mode: "exact" });
     await settle();
-    expect(states.at(-1)).toEqual({ kind: "error", message: "Couldn't start listening — try again" });
+    expect(states.at(-1)).toEqual({ kind: "error", message: "Couldn't start listening. Try again." });
   });
 
   it("locks hands-free on a double tap and finishes on the next press", async () => {

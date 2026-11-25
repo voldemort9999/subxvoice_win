@@ -1,9 +1,9 @@
 import type { DictionaryEntry, SessionRecord } from "@subx/core";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { PendingFix } from "../../../shared/ipc";
+import type { PendingFix, TeamInfo } from "../../../shared/ipc";
 import { useHistory, useSettings } from "../shared/hooks";
 import { PencilIcon, SearchIcon, TrashIcon } from "../shared/icons";
-import { Button, Empty, FIELD, Field, IconButton, Section, Segmented, Toggle } from "../shared/ui";
+import { Button, Empty, FIELD, Field, IconButton, Notice, Section, Segmented, Toggle } from "../shared/ui";
 
 type Filter = "all" | "learned" | "you";
 const FILTERS: { value: Filter; label: string }[] = [
@@ -48,6 +48,16 @@ export function DictionaryPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [settings, update] = useSettings();
   const records = useHistory();
+  // In a team: a new word can be the person's own or the whole team's (the user's call, 2026-11-22).
+  const [team, setTeam] = useState<TeamInfo["team"]>(null);
+  const [forWhom, setForWhom] = useState<"me" | "team">("me");
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    void window.subx.team.get().then(
+      (info) => setTeam(info?.team ?? null),
+      () => setTeam(null),
+    );
+  }, []);
 
   const load = useCallback(() => {
     void window.subx.dictionary.list().then(setEntries);
@@ -68,12 +78,23 @@ export function DictionaryPage() {
   async function add(event: FormEvent) {
     event.preventDefault();
     if (!word.trim()) return;
-    await window.subx.dictionary.upsert({
-      word: word.trim(),
-      misheardAs: split(heardAs),
-      source: "you",
-      addedAt: Date.now(),
-    });
+    setNote(null);
+    if (team && forWhom === "team") {
+      try {
+        await window.subx.team.words({ upsert: [{ word: word.trim(), misheardAs: split(heardAs) }] });
+        setNote(`Added for everyone in ${team.name}. It's in Settings, Team.`);
+      } catch (error) {
+        setNote(error instanceof Error ? error.message : "Couldn't add it for the team. Try again.");
+        return;
+      }
+    } else {
+      await window.subx.dictionary.upsert({
+        word: word.trim(),
+        misheardAs: split(heardAs),
+        source: "you",
+        addedAt: Date.now(),
+      });
+    }
     setWord("");
     setHeardAs("");
     load();
@@ -121,7 +142,7 @@ export function DictionaryPage() {
   return (
     <div className="space-y-10">
       <Section title="How your dictionary works">
-        <ul className="m-0 grid list-none gap-3 p-0 text-[14px] sm:grid-cols-3">
+        <ul className="m-0 grid list-none gap-3 p-0 text-[14px] lg:grid-cols-3">
           <Explainer title="Heard right">
             Every word here is sent along with your voice, so names, brands and terms are recognised the first
             time.
@@ -138,6 +159,19 @@ export function DictionaryPage() {
       </Section>
 
       <Section title="Add a word">
+        {team && (
+          <div className="mb-4">
+            <Segmented
+              label="Who the word is for"
+              value={forWhom}
+              onChange={setForWhom}
+              options={[
+                { value: "me", label: "Just me" },
+                { value: "team", label: `Everyone in ${team.name}` },
+              ]}
+            />
+          </div>
+        )}
         <form onSubmit={add} className="grid items-end gap-3 sm:grid-cols-[1fr_1.4fr_auto]">
           <label className="space-y-1.5">
             <span className="font-semibold">Word</span>
@@ -165,7 +199,13 @@ export function DictionaryPage() {
         </form>
         <p className="mt-2 text-xs text-ink-faint">
           Optional. Separate spellings with commas; each one is replaced with your word wherever it appears.
+          {team ? ` Words for everyone in ${team.name} are shared with the team; your own stay yours.` : ""}
         </p>
+        {note && (
+          <div className="mt-3">
+            <Notice>{note}</Notice>
+          </div>
+        )}
       </Section>
 
       <Field label="Learn from my edits" hint="Off, nothing new is learned; the words already here stay.">

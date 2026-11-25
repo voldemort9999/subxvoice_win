@@ -27,6 +27,8 @@ import { FONTS, setFont, setTheme, THEMES, useFont, useThemeChoice } from "../sh
 import { DEFAULT_STYLES, STYLE_CATEGORIES, STYLE_OPTIONS } from "../shared/tones";
 import { Button, Field, Notice, Select, Toggle } from "../shared/ui";
 import { Working } from "../shared/Working";
+import { PlanTab } from "./PlanTab";
+import { TeamTab } from "./TeamTab";
 
 /**
  * Settings in sections, each named for what is inside so nobody has to open one to find out. The
@@ -48,6 +50,8 @@ const TABS = [
     about: "What Windows lets SUBXVoice do: hear you, see the key, type.",
   },
   { id: "privacy", label: "Privacy and data", about: "Where your recordings and transcripts are kept." },
+  { id: "plan", label: "Plan", about: "Your plan, the words you have left, and billing." },
+  { id: "team", label: "Team", about: "Your team: the people in it, the seats, and the words you share." },
   { id: "account", label: "Account", about: "Who is signed in on this PC." },
   { id: "about", label: "About and updates", about: "The version you have and the newest one." },
 ] as const;
@@ -84,10 +88,20 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
   const account = useAccount();
   const update$ = useUpdate();
   const hotkey = shownHotkey(settings?.hotkey, info) ?? "";
+  // In a narrow window the tabs are one row that scrolls: the open one is brought into view, or a
+  // tab opened from elsewhere (Team, Plan) was off to the side and nothing looked chosen.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the tab changes.
+  useEffect(() => {
+    document
+      .querySelector('[data-settings-tab][aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
 
   return (
-    <div className="grid gap-8 md:grid-cols-[210px_minmax(0,1fr)]">
-      <nav aria-label="Settings sections" className="md:sticky md:top-0 md:self-start">
+    // One column under md must still be allowed to shrink (minmax 0): with the default, the tab row's
+    // full length set its width, and in a narrow window the whole page slid sideways.
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 md:grid-cols-[210px_minmax(0,1fr)]">
+      <nav aria-label="Settings sections" className="min-w-0 md:sticky md:top-0 md:self-start">
         <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col">
           {TABS.map((item) => {
             const chosen = item.id === tab;
@@ -96,6 +110,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
                 <button
                   type="button"
                   onClick={() => choose(item.id)}
+                  data-settings-tab
                   aria-current={chosen ? "page" : undefined}
                   className={`w-full rounded-[10px] px-3 py-2 text-left whitespace-nowrap transition-colors md:whitespace-normal ${
                     chosen
@@ -334,6 +349,10 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
           </div>
         )}
 
+        {tab === "plan" && <PlanTab />}
+
+        {tab === "team" && <TeamTab onOpenPlan={() => choose("plan")} />}
+
         {tab === "account" && (
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -450,7 +469,7 @@ function DictationLanguages() {
       <p className="text-ink-soft">{voice.problem}</p>
     ) : (
       <p className="text-ink-soft">
-        <Working label="Loading your language settings…" />
+        <Working label="Loading your language settings..." />
       </p>
     );
   }
@@ -562,14 +581,14 @@ function FontPicker() {
 
 /** Says what the updater is doing, in the one line someone glances at to answer "am I current?". */
 function UpdateLine({ state }: { state: UpdateState | null }) {
-  if (!state || state.kind === "checking") return <Working label="Checking for updates…" />;
+  if (!state || state.kind === "checking") return <Working label="Checking for updates..." />;
   switch (state.kind) {
     case "current":
       return <>Up to date, checked {timeAgo(state.checkedAt)}.</>;
     case "downloading":
       return (
         <>
-          Downloading {state.version} — {state.percent}%
+          Downloading {state.version} - {state.percent}%
         </>
       );
     case "ready":
@@ -598,7 +617,7 @@ function UpdateAction({ state }: { state: UpdateState | null }) {
   return (
     <Button busy={busy} onClick={() => void window.subx.update.check()}>
       {busy ? (
-        <Working label={state?.kind === "downloading" ? "Downloading…" : "Checking…"} />
+        <Working label={state?.kind === "downloading" ? "Downloading..." : "Checking..."} />
       ) : (
         "Check for updates"
       )}
@@ -663,9 +682,14 @@ function PillPreview({ hotkey, liveText, look }: { hotkey: string; liveText: boo
     <div className="mb-6 overflow-hidden rounded-[16px] bg-[radial-gradient(120%_140%_at_50%_0%,#3a3530,#0f0e0d)] px-6 py-4">
       <ul className="m-0 list-none divide-y divide-[#f2e8c8]/8 p-0">
         {PREVIEW.map((item) => (
-          <li key={item.label} className="flex min-w-0 items-center gap-5 py-2.5">
+          // Narrower than lg, the pill gets a line of its own under its name: squeezed between the
+          // name and the button it was cut off mid-word.
+          <li
+            key={item.label}
+            className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 py-2.5 lg:flex-nowrap"
+          >
             <span className="w-28 shrink-0 text-xs text-[#f2e8c8]/55">{item.label}</span>
-            <div className="flex h-10 min-w-0 flex-1 items-center justify-center overflow-hidden">
+            <div className="order-last flex h-10 min-w-0 basis-full items-center justify-center overflow-hidden lg:order-none lg:basis-0 lg:flex-1">
               <PillView
                 state={item.state}
                 levels={levels}
@@ -680,7 +704,7 @@ function PillPreview({ hotkey, liveText, look }: { hotkey: string; liveText: boo
             <button
               type="button"
               onClick={() => window.subx.pill.demo(item.state)}
-              className="shrink-0 rounded-full px-2.5 py-1 text-xs text-[#f2e8c8]/55 transition-colors hover:bg-[#f2e8c8]/10 hover:text-[#f2e8c8]"
+              className="ml-auto shrink-0 rounded-full px-2.5 py-1 text-xs text-[#f2e8c8]/55 transition-colors hover:bg-[#f2e8c8]/10 hover:text-[#f2e8c8] lg:ml-0"
             >
               Show on screen
             </button>
@@ -830,7 +854,7 @@ function YourDevices() {
   return (
     <Field label="Your devices" hint="The computers this account uses SUBXVoice on.">
       {devices === null ? (
-        <p className="text-ink-soft">Loading…</p>
+        <p className="text-ink-soft">Loading...</p>
       ) : sorted.length === 0 ? (
         <p className="text-ink-soft">Shown after your next dictation.</p>
       ) : (
@@ -903,7 +927,7 @@ function DeleteAccount() {
               .finally(() => setBusy(false));
           }}
         >
-          {busy ? <Working label="Deleting…" /> : "Delete my account"}
+          {busy ? <Working label="Deleting..." /> : "Delete my account"}
         </Button>
         {problem && <Notice role="alert">{problem}</Notice>}
       </div>

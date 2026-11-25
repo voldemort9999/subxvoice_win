@@ -59,12 +59,8 @@ export async function signInInBrowser(options: {
         const linking = !!failure && /already found an entry/i.test(failure);
         // Only the first good callback waits; a reload of that tab gets an answer straight away.
         if (ok && !tab.held) tab.held = response;
-        else if (ok)
-          response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(page("done"));
-        else
-          response
-            .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-            .end(page(linking ? "linking" : "failed"));
+        else if (ok) sendTo(response, "done");
+        else sendTo(response, linking ? "linking" : "failed");
         clearTimeout(timer);
         if (ok) resolve(got);
         else {
@@ -113,9 +109,7 @@ export async function signInInBrowser(options: {
     if (!response.ok || typeof tokens.access_token !== "string" || typeof tokens.id_token !== "string") {
       throw new Error("Google sign-in didn't finish. Try again.");
     }
-    tab.held
-      ?.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-      .end(page("done", emailIn(tokens.id_token)));
+    if (tab.held) sendTo(tab.held, "done");
     tab.held = null;
     return {
       AccessToken: tokens.access_token,
@@ -125,26 +119,10 @@ export async function signInInBrowser(options: {
     };
   } finally {
     // A tab still waiting means the sign-in failed after the code came back.
-    tab.held?.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(page("failed"));
+    if (tab.held) sendTo(tab.held, "failed");
     server.close();
   }
 }
-
-/** The address in an ID token that just came from Cognito over TLS; only shown, never trusted. */
-function emailIn(idToken: string): string {
-  try {
-    const claims = JSON.parse(Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString("utf8"));
-    return typeof claims.email === "string" ? claims.email : "";
-  } catch {
-    return "";
-  }
-}
-
-const escapeHtml = (text: string) =>
-  text.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
-  );
 
 /**
  * What a failed Google sign-in means, in words. Cognito passes Google's refusal on as
@@ -167,42 +145,17 @@ async function listen(): Promise<{ server: Server; port: number }> {
     });
     if (opened) return { server, port };
   }
-  throw new Error("Google sign-in couldn't start: close other apps using ports 47821–47823 and try again.");
+  throw new Error("Google sign-in couldn't start: close other apps using ports 47821-47823 and try again.");
 }
 
-/** What the browser tab shows once it has handed the code back: which account, in our own look. */
-function page(outcome: "done" | "linking" | "failed", email = ""): string {
-  const { title, body } = {
-    done: {
-      title: "You're signed in",
-      body: "Go back to SUBXVoice. You can close this tab.",
-    },
-    // The first Google sign-in for an email that has an account: linked now, finished in a new tab.
-    linking: { title: "Almost there", body: "Your Google account is now linked. Finishing in a new tab…" },
-    failed: { title: "Sign-in didn't finish", body: "Go back to SUBXVoice and try again." },
-  }[outcome];
-  const signedIn = outcome === "done" && email;
-  const account = signedIn
-    ? `<div class="account"><span class="dot">${escapeHtml(email.slice(0, 1).toUpperCase())}</span><span><small>Signed in as</small><b>${escapeHtml(email)}</b></span></div>`
-    : "";
-  const other = signedIn
-    ? `<p class="switch">Not the right account? In SUBXVoice, sign out, then continue with Google again and pick another.</p>`
-    : "";
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SUBXVoice</title>
-<style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#161412;color:#f2e8c8;font:16px/1.5 -apple-system,system-ui,sans-serif}
-main{width:min(420px,calc(100vw - 48px))}
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;margin-bottom:34px}
-.brand b{font-weight:800}
-h1{font-size:28px;letter-spacing:-.02em;margin:0 0 8px}
-p{margin:0;color:rgba(242,232,200,.66)}
-.account{display:flex;align-items:center;gap:14px;margin:26px 0 18px;padding:16px 18px;border-radius:16px;background:#211e1a;border:1px solid rgba(242,232,200,.08)}
-.dot{width:40px;height:40px;border-radius:20px;display:grid;place-items:center;background:#6b7cff;color:#161412;font-weight:700;font-size:18px;flex:none}
-.account small{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:rgba(242,232,200,.5)}
-.account b{display:block;font-size:16px;word-break:break-all}
-.switch{font-size:14px;margin-top:22px;padding-top:18px;border-top:1px solid rgba(242,232,200,.08)}
-i{display:block;width:44px;height:4px;border-radius:2px;background:#6b7cff;margin:0 0 22px}
-</style>
-<main><div class="brand"><svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="true"><rect x="6" y="6" width="88" height="88" rx="22" fill="#2a2621"/><line x1="27" y1="27" x2="73" y2="73" stroke="#f2e8c8" stroke-width="8" stroke-linecap="round"/><path d="M27 73 C 24 60, 40 62, 50 50 S 76 40, 73 27" fill="none" stroke="#6b7cff" stroke-width="8" stroke-linecap="round"/></svg><span>SUB<b>X</b>Voice</span></div>
-<i></i><h1>${title}</h1>${account}<p>${body}</p>${other}</main>`;
+/**
+ * Where the browser tab goes once the code is here: a page on our website, so the tab shows
+ * subxvoice.app/signed-in rather than this Mac's http://localhost:47821/callback?code=… (the code
+ * is useless without the verifier, which never leaves the app, but nobody should have to read it).
+ */
+const SIGNED_IN_PAGE = "https://subxvoice.app/signed-in/";
+
+function sendTo(response: ServerResponse, outcome: "done" | "linking" | "failed"): void {
+  const where = outcome === "done" ? SIGNED_IN_PAGE : `${SIGNED_IN_PAGE}?r=${outcome}`;
+  response.writeHead(302, { Location: where, "Cache-Control": "no-store" }).end();
 }

@@ -8,17 +8,17 @@ export const STYLE_OPTIONS: { value: WritingStyle; label: string; hint: string }
   {
     value: "formal",
     label: "Formal",
-    hint: "Full sentences, capitals and full stops. “Can you send the report by Friday? Thanks.”",
+    hint: "Full sentences, capitals and full stops. 'Can you send the report by Friday? Thanks.'",
   },
   {
     value: "casual",
     label: "Casual",
-    hint: "Natural chat, no full stop at the end. “Can you send the report by Friday, thanks”",
+    hint: "Natural chat, no full stop at the end. 'Can you send the report by Friday, thanks'",
   },
   {
     value: "very_casual",
     label: "Very casual",
-    hint: "Like texting a friend, all lowercase. “can you send the report by friday, thanks”",
+    hint: "Like texting a friend, all lowercase. 'can you send the report by friday, thanks'",
   },
 ];
 

@@ -8,6 +8,7 @@
 // below it only knows about plug-point interfaces. Everything app-specific — which settings apply,
 // what the pill says, where the audio file goes, what a failure reads like — lives here.
 import type { AppContext, AudioClip, ContextReader, Mode, Pipeline, SessionRecord } from "@subx/core";
+import type { Usage } from "../shared/ipc";
 import type { DictationEngine, DictationRun } from "./dictation";
 
 export interface WorkflowDeps {
@@ -33,10 +34,10 @@ export interface WorkflowDeps {
    */
   account?(): string;
   /**
-   * Today's remaining dictation seconds, asked for only when opening fails — the happy path must
-   * not pay for a round trip it does not need.
+   * Why the account can't dictate right now (its words, or the day's time, are used up), or null.
+   * Asked for only when opening fails: the happy path must not pay for a round trip it does not need.
    */
-  remainingSeconds?(): Promise<number | null>;
+  allowanceProblem?(): Promise<string | null>;
   log?(line: string): void;
 }
 
@@ -114,11 +115,21 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
  * connection failure. Saying "sign in again" there would send the user nowhere.
  */
 async function explain(deps: WorkflowDeps, error: unknown): Promise<unknown> {
-  const remaining = await deps.remainingSeconds?.().catch(() => null);
-  if (remaining !== null && remaining !== undefined && remaining <= 0) {
-    return new Error("You've used today's dictation time. It resets tomorrow.");
+  const problem = await deps.allowanceProblem?.().catch(() => null);
+  return problem ? new Error(problem) : error;
+}
+
+/** What the pill says when the account has no words (or, rarely, no time) left. */
+export function allowanceProblem(usage: Usage | null): string | null {
+  const words = usage?.words;
+  if (words?.out) {
+    const when = words.per === "week" ? "on Monday" : "tomorrow";
+    const free = usage?.plan === "free";
+    const more = free ? " Upgrade in Settings to keep going." : "";
+    return `You've used this ${words.per}'s ${free ? "free " : ""}words. They come back ${when}.${more}`;
   }
-  return error;
+  if (usage && usage.remaining <= 0) return "You've used today's dictation time. It resets tomorrow.";
+  return null;
 }
 
 async function keepAudio(

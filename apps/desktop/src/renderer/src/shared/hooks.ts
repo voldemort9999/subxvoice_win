@@ -5,6 +5,7 @@ import type {
   AccountState,
   AppInfo,
   AppSettings,
+  Billing,
   DayTotal,
   MicrophoneOption,
   PermissionStatus,
@@ -138,6 +139,31 @@ export function useUsage(): Usage | null {
     return window.subx.stats.onChanged(load);
   }, []);
   return usage;
+}
+
+/**
+ * The account's plan and the plans on offer. Read when the window comes back to the front (that is
+ * when someone returns from paying in the browser), at most every 30 seconds, and when the plan
+ * the dictation totals report (`planHint`) changes: never once per dictation.
+ */
+export function useBilling(planHint?: string): { billing: Billing | null | undefined; reload: () => void } {
+  // undefined: loading; null: the server couldn't be reached.
+  const [billing, setBilling] = useState<Billing | null | undefined>(undefined);
+  const [readAt, setReadAt] = useState(0);
+  const reload = useCallback(() => {
+    setReadAt(Date.now());
+    void window.subx.billing.get().then(setBilling, () => setBilling(null));
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: planHint is the reason to read again.
+  useEffect(() => reload(), [reload, planHint]);
+  useEffect(() => {
+    const onFocus = () => {
+      if (Date.now() - readAt > 30_000) reload();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [reload, readAt]);
+  return { billing, reload };
 }
 
 /** The computers this account uses; asked once, when the account page opens. */

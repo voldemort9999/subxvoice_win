@@ -18,14 +18,29 @@ export const IPC = {
   authResendEmailCode: "auth:resend-email-code",
   authDeleteAccount: "auth:delete-account",
   authGoogle: "auth:google",
+  authAccounts: "auth:accounts",
+  authSwitch: "auth:switch",
+  authAddAccount: "auth:add-account",
   authSignOut: "auth:sign-out",
   authSetProfile: "auth:set-profile",
   authUsage: "auth:usage",
+  billingGet: "billing:get",
+  billingCheckout: "billing:checkout",
+  billingPortal: "billing:portal",
+  billingSeatsQuote: "billing:seats-quote",
+  billingSeatsBuy: "billing:seats-buy",
+  teamGet: "team:get",
+  teamSave: "team:save",
+  teamInvite: "team:invite",
+  teamRemove: "team:remove",
+  teamWords: "team:words",
+  teamLeave: "team:leave",
   authChanged: "auth:changed",
   openRecordingsFolder: "app:open-recordings-folder",
   permissionList: "permissions:list",
   permissionRequest: "permissions:request",
   permissionOpenSettings: "permissions:open-settings",
+  appRestart: "app:restart",
   historyList: "history:list",
   statsDays: "stats:days",
   /** The account's totals or allowance changed (a dictation, or another device): read them again. */
@@ -175,11 +190,116 @@ export interface VoiceSettings {
   styles?: Record<StyleCategory, WritingStyle>;
 }
 
-/** Dictation time used today, and what is left of the daily allowance. */
+/**
+ * Dictation time used today and the day's time guard (seconds), and words: how many this account
+ * typed this week (or day), the share of its allowance used, and when they come back. The allowance
+ * itself is never sent: how many free words there are is not shown to anyone.
+ */
 export interface Usage {
   used: number;
   limit: number;
   remaining: number;
+  plan?: string;
+  words?: {
+    used: number;
+    unlimited: boolean;
+    /** 0 to 100; null when unlimited. */
+    percentUsed: number | null;
+    out: boolean;
+    per: "day" | "week";
+    resetsAt: string;
+  };
+}
+
+export type Region = "in" | "intl";
+export type BillingInterval = "month" | "year";
+
+/** One plan as the server describes it: names and prices can change without a new release. */
+export interface BillingPlan {
+  id: "free" | "pro" | "power" | "team";
+  name: string;
+  unlimited: boolean;
+  per: "day" | "week";
+  /** In the account's currency; null for Free and Enterprise. */
+  price: Record<BillingInterval, number> | null;
+  buyable: Record<BillingInterval, boolean> | null;
+  /** Can be paid once, with no autopay (a month, or a year at the yearly rate). */
+  buyableOnce?: Record<BillingInterval, boolean> | null;
+}
+
+/** What more seats for a team paid once cost: for the months left, until the team's end. */
+export interface SeatsQuote {
+  add: number;
+  months: number;
+  until: string;
+  amount: number;
+  currency: "INR" | "USD";
+}
+
+/** The account's team (Team and Enterprise plans), or null (GET /v1/team). */
+export interface TeamInfo {
+  team: {
+    name: string;
+    seats: number;
+    role: "owner" | "admin" | "member";
+    members: {
+      email: string;
+      role: "owner" | "admin" | "member";
+      name: string | null;
+      invitedAt: string;
+      joinedAt: string | null;
+      you: boolean;
+      /** Owner and admins only: words since Monday and the last day used (counts, never words). */
+      weekWords?: number;
+      lastDay?: string | null;
+    }[];
+    /** `canChange`: this person may change or remove it (their own; any for owner and admins). */
+    words: {
+      word: string;
+      misheardAs: string[];
+      addedBy?: string | null;
+      mine?: boolean;
+      canChange?: boolean;
+    }[];
+    /** A member who also pays for a plan of their own: the team covers them. */
+    paysOwnPlan?: boolean;
+    /** False when this person's seat isn't paid for (the payment for it failed): their own plan. */
+    seated?: boolean;
+    /**
+     * Owner and admins: billed per person who has joined (no cap), how many are billed now, and
+     * what one more costs (`amount` per month, `per` the billing period).
+     */
+    billing?: {
+      perPerson: boolean;
+      billedPeople: number;
+      pricePerPerson?: { amount: number; currency: string; per: "month" | "year" };
+      /** A team paid once: when its months end. */
+      prepaidUntil?: string;
+    };
+  } | null;
+  /** The account pays for Team (or has Enterprise) and has no team yet. */
+  canStart: boolean;
+}
+
+/** The account's plan and every plan on offer (GET /v1/billing). */
+export interface Billing {
+  plan: BillingPlan["id"];
+  /** "trialing": the free start every new account gets. */
+  status: string | null;
+  /** Renews on this date, or ends on it when `cancelAtPeriodEnd`. */
+  periodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  /** "trial", "manual" (given by us), or the payment company. */
+  provider: string | null;
+  /** Paid once, no autopay: it ends on `periodEnd`; paying again adds more time. */
+  once?: boolean;
+  /** Rupees in India, dollars everywhere else: decided by the server from where the person is. */
+  region: Region;
+  currency: "INR" | "USD";
+  plans: BillingPlan[];
+  trial: { plan: string; days: number } | null;
+  popular: string;
+  canBuy: boolean;
 }
 
 /** A computer the account uses SUBXVoice on (the server's devices table). */
@@ -214,6 +334,16 @@ export interface AccountState {
 }
 
 /** The Google account last signed in on this Mac, offered as "Continue as …" after a sign-out. */
+/** An account signed in on this Mac before, kept so switching between them is one click. */
+export interface RememberedAccount {
+  id: string;
+  email: string;
+  name: string;
+  /** data: URL or "". */
+  photo: string;
+  current: boolean;
+}
+
 export interface LastGoogleAccount {
   email: string;
   name: string;
@@ -229,6 +359,11 @@ export interface MicrophoneOption {
 export interface PermissionStatus {
   kind: PermissionKind;
   state: PermissionState;
+  /**
+   * Allowed, but this run of the app is still refused (macOS applies Input Monitoring only after
+   * the app restarts): the list offers to restart it.
+   */
+  restartNeeded?: true;
 }
 
 export type PillState =
@@ -299,6 +434,47 @@ export interface SubxApi {
     /** The computers this account uses SUBXVoice on; asked only when the account page opens. */
     devices(): Promise<AccountDevice[]>;
     onChanged(listener: (state: AccountState) => void): () => void;
+    /**
+     * Accounts remembered on this Mac, to switch between (say work and personal). The Swift app
+     * answers; the Electron app has no handler, and the menu then leaves switching out.
+     */
+    accounts(): Promise<RememberedAccount[]>;
+    switchTo(id: string): Promise<void>;
+    /** Keeps this account remembered and shows sign-in for another. */
+    addAccount(): Promise<void>;
+  };
+  team: {
+    /** Null when the server can't be reached. */
+    get(): Promise<TeamInfo | null>;
+    /** Starts the team, or renames it. */
+    save(name: string): Promise<void>;
+    /** Adds someone by email; they join when they sign in with it. Rejects with a message to show. */
+    invite(email: string, admin?: boolean): Promise<void>;
+    remove(email: string): Promise<void>;
+    words(change: { upsert?: { word: string; misheardAs: string[] }[]; remove?: string[] }): Promise<void>;
+    /** A member or admin leaves the team; their own plan applies at once. */
+    leave(): Promise<void>;
+  };
+  billing: {
+    /** Null when the server can't be reached. */
+    get(): Promise<Billing | null>;
+    /** Opens the payment page in the browser; rejects with a message to show. */
+    /** The currency is the server's choice (where the person is), never the app's. */
+    /**
+     * Autopay: Team is bought for the owner alone, people added later billed from when they join.
+     * `once`: paid in one go with no autopay, for a month or a year (a team for `seats` people).
+     */
+    checkout(choice: {
+      plan: "pro" | "power";
+      interval: BillingInterval;
+      once?: boolean;
+      seats?: number;
+    }): Promise<void>;
+    /** Opens the payment company's page to change card, see invoices or cancel. */
+    portal(): Promise<void>;
+    /** A team paid once: what `add` more seats cost, and paying for them (in the browser). */
+    seatsQuote(add: number): Promise<SeatsQuote>;
+    addSeats(add: number): Promise<void>;
   };
   app: {
     info(): Promise<AppInfo>;
@@ -329,6 +505,8 @@ export interface SubxApi {
     list(): Promise<PermissionStatus[]>;
     request(kind: PermissionKind): Promise<void>;
     openSettings(kind: PermissionKind): Promise<void>;
+    /** Quits and reopens the app, so a permission allowed meanwhile takes effect. */
+    restartApp(): Promise<void>;
   };
   history: {
     list(): Promise<SessionRecord[]>;

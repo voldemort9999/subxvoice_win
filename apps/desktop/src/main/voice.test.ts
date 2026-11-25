@@ -23,6 +23,19 @@ function fakeServer(start: Record<string, unknown>) {
     if (!online) throw new OfflineError("offline");
   };
   const backend: Backend = {
+    // Not used by the voice settings.
+    billing: async () => {
+      throw new Error("not used");
+    },
+    checkout: async () => ({ url: "" }),
+    portal: async () => ({ url: "" }),
+    seatsQuote: async (add) => ({ add, months: 1, until: "", amount: 0, currency: "INR" }),
+    addSeats: async () => ({ url: "" }),
+    team: async () => ({ team: null, canStart: false }),
+    saveTeam: async () => {},
+    invite: async () => {},
+    removeMember: async () => {},
+    changeTeamWords: async () => {},
     settings: async () => {
       calls.get++;
       check();
@@ -50,6 +63,7 @@ function fakeServer(start: Record<string, unknown>) {
     stats: async () => ({ usage: { used: 0, limit: 0, remaining: 0 }, days: [], settingsVersion: at() }),
     devices: async () => [],
     languages: async () => [],
+    leaveTeam: async () => {},
     deleteAccount: async () => {},
   };
   return {

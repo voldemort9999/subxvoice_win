@@ -2,7 +2,7 @@
 // key. The app holds none (AGENTS.md rule 3); what proves the user is their Cognito access token.
 
 import { join } from "node:path";
-import { SubxDictateStt } from "@subx/providers";
+import { SubxDictateStt, timeZoneHeader } from "@subx/providers";
 import { app } from "electron";
 import { thisDevice } from "./device";
 
@@ -53,9 +53,10 @@ export function createStt(
 }
 
 /** What every request to our server says about the app and the computer (`device.ts`). */
-export function clientHeaders(): { "x-subx-client": string; "x-subx-device": string } {
+export function clientHeaders(): { "x-subx-client": string; "x-subx-device": string; "x-subx-tz"?: string } {
   return {
     "x-subx-client": `win/${app.getVersion()}`,
     "x-subx-device": thisDevice(app.getPath("userData"), process.getSystemVersion()),
+    ...timeZoneHeader(),
   };
 }

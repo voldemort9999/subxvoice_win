@@ -8,7 +8,7 @@ import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
 import { Contours } from "./shared/effects/Contours";
-import { useAccount, useAppInfo, useUsage } from "./shared/hooks";
+import { useAccount, useAppInfo, useBilling, useUsage } from "./shared/hooks";
 import { Launch, useLaunchScene } from "./shared/Launch";
 import { type PageId, Sidebar } from "./shared/Sidebar";
 import { useTheme } from "./shared/themes";
@@ -29,6 +29,7 @@ export function App() {
   const launch = useLaunchScene(info);
   const theme = useTheme();
   const usage = useUsage();
+  const { billing } = useBilling(usage?.plan);
   const hotkey = hotkeyLabel(info?.hotkeys[0]?.keys);
   // "Change Languages…" and the like in the menu bar.
   useEffect(
@@ -56,7 +57,17 @@ export function App() {
     // The sidebar runs flush to the window's edge, under the traffic lights, and the
     // page is a card set into it. The lights then sit on the sidebar, never on the card's corner.
     <div className="flex h-full bg-side">
-      <Sidebar page={page} onNavigate={setPage} account={account} usage={usage} />
+      <Sidebar
+        page={page}
+        onNavigate={setPage}
+        account={account}
+        usage={usage}
+        billing={billing}
+        onOpenPlan={() => {
+          openSettings("plan", setPage);
+          setSettingsVisit((visit) => visit + 1);
+        }}
+      />
 
       <div className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-rule bg-page">
         {/* Surveyed paper: drawn once per resize, never animated, since this window sits open all day. */}

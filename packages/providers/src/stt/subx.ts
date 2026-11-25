@@ -46,8 +46,9 @@ export interface SubxOptions {
  */
 const SERVER_PROBLEMS: Record<string, string> = {
   unauthorized: "Sign in to SUBXVoice again to dictate.",
-  daily_limit: "You've used today's dictation time. It resets tomorrow.",
+  daily_limit: "You've reached your plan's limit for now. See Settings, then Plan.",
   shutting_down: "SUBXVoice is restarting. Try again in a few seconds.",
+  busy: "Many people are dictating right now. Try again in a moment.",
   // The server's security audit (2026-11-20): two open dictations per account, capped message size.
   rate_limited: "Another dictation on your account is still running. Try again in a moment.",
   too_large: "That dictation was too long to send. Try a shorter one.",
@@ -56,6 +57,12 @@ const SERVER_PROBLEM = "SUBXVoice couldn't finish that dictation. Try again in a
 
 /** The server finishes in ~0.05–0.5 s after release; past this the dictation is failed honestly. */
 const FINAL_TIMEOUT_MS = 10_000;
+
+/** `x-subx-tz`: the system's time zone, read each time (the person may have travelled). */
+export function timeZoneHeader(): { "x-subx-tz"?: string } {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return zone ? { "x-subx-tz": zone } : {};
+}
 
 export class SubxDictateStt implements SttProvider {
   readonly id = "subx";
@@ -118,6 +125,8 @@ class SubxStream implements SttStream {
         Authorization: `Bearer ${token}`,
         ...(options.client ? { "x-subx-client": options.client } : {}),
         ...(options.device ? { "x-subx-device": options.device } : {}),
+        // Where the person is now: their days and weeks (when free words come back) follow it.
+        ...timeZoneHeader(),
       },
     });
     this.socket.binaryType = "arraybuffer";
@@ -154,7 +163,9 @@ class SubxStream implements SttStream {
   }
 
   push(samples: Int16Array): void {
-    if (this.released || this.failure) return;
+    // The text can come before the key is released (the server stops a dictation at a limit and
+    // sends what was said): nothing more is sent, and it is pasted at release as usual.
+    if (this.released || this.failure || this.result) return;
     const frame = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength).slice();
     if (this.opened) this.socket.send(frame);
     else this.backlog.push(frame);
@@ -229,7 +240,11 @@ class SubxStream implements SttStream {
       }
     } else if (message.type === "error") {
       const code = message.code === "unauthorized" ? "permission_denied" : "provider";
-      this.fail(new SubxError(code, SERVER_PROBLEMS[message.code ?? ""] ?? SERVER_PROBLEM));
+      // The limit message is written for people and says what applies to this account (how many
+      // words, when they come back, whether an upgrade helps); every other one may carry an
+      // engine's words, meant for us.
+      const said = message.code === "daily_limit" ? message.message?.trim() : "";
+      this.fail(new SubxError(code, said || (SERVER_PROBLEMS[message.code ?? ""] ?? SERVER_PROBLEM)));
     }
   }
 
