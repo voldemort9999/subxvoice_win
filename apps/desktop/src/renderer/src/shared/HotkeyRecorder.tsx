@@ -70,6 +70,7 @@ export function HotkeyRecorder({
     <div>
       <div className="flex flex-wrap items-center gap-2.5">
         <kbd
+          data-recording={recording ? "true" : undefined}
           className={`kbd min-w-[140px] py-1.5 text-center text-[14px] transition-colors ${
             recording ? "border-accent bg-accent text-on-accent" : ""
           }`}

@@ -5,7 +5,7 @@ import { DashboardPage, openSettings } from "./pages/DashboardPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { SettingsPanel } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
 import { Contours } from "./shared/effects/Contours";
 import { useAccount, useAppInfo, useBilling, useUsage } from "./shared/hooks";
@@ -31,6 +31,16 @@ export function App() {
   const usage = useUsage();
   const { billing } = useBilling(usage?.plan);
   const hotkey = hotkeyLabel(info?.hotkeys[0]?.keys);
+  // Ctrl+, opens Settings, as ⌘, does in the Mac app (fbeacae), on the section last open.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "," || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      setPage("settings");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // "Change Languages…" and the like in the menu bar.
   useEffect(
     () =>
@@ -46,6 +56,8 @@ export function App() {
   // Nothing is drawn until the run and the saved session are known, so the window never flashes
   // the sign-in form at someone who is already signed in, nor the app before its launch scene.
   if (!info) return <div className="h-full bg-stage" />;
+  // Settings is a panel over Home, never a page of its own (the Mac app's Shell.swift).
+  const shown: PageId = page === "settings" ? "dashboard" : page;
   if (launch.show) return <Launch onDone={launch.done} />;
   if (!account) return <div className="h-full bg-stage" />;
   if (!account.signedIn) return <SignInPage lastGoogle={account.lastGoogle} />;
@@ -102,14 +114,16 @@ export function App() {
 
         <main className="scroll-area relative flex-1 overflow-y-auto">
           {/* Keyed by page so each one arrives with a short rise, answering the click that chose it. */}
-          <div key={page} className="animate-arrive mx-auto max-w-5xl px-8 pt-4 pb-10">
-            {page === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
+          <div key={shown} className="animate-arrive mx-auto max-w-5xl px-8 pt-4 pb-10">
+            {shown === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
             {page === "insights" && <InsightsPage hotkey={hotkey} />}
             {page === "dictionary" && <DictionaryPage />}
-            {page === "settings" && <SettingsPage key={settingsVisit} info={info} />}
           </div>
         </main>
       </div>
+      {page === "settings" && (
+        <SettingsPanel key={settingsVisit} info={info} onClose={() => setPage("dashboard")} />
+      )}
     </div>
   );
 }

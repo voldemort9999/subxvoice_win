@@ -136,3 +136,64 @@ export const FolderIcon = ({ className }: IconProps) => (
     <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2a2 2 0 0 1 1.6.8L11.5 7.5h7A2.5 2.5 0 0 1 21 10v7.5A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5Z" />
   </Icon>
 );
+
+// Settings' section icons, as the Mac app's (SettingsPage.swift tabs): sliders, globe, speaker, lock,
+// card, people, person, info. Simple strokes in the same 24-unit box as the others.
+
+export const SlidersIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+    <circle cx="16" cy="6" r="2" />
+    <circle cx="10" cy="12" r="2" />
+    <circle cx="18" cy="18" r="2" />
+  </Icon>
+);
+
+export const GlobeIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </Icon>
+);
+
+export const SpeakerIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M11 5 6 9H3v6h3l5 4Z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+  </Icon>
+);
+
+export const LockIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </Icon>
+);
+
+export const CardIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18M7 15h3" />
+  </Icon>
+);
+
+export const PeopleIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6" />
+  </Icon>
+);
+
+export const PersonIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </Icon>
+);
+
+export const InfoIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6M12 7.5v0" />
+  </Icon>
+);

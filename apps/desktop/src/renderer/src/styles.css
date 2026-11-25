@@ -358,6 +358,14 @@
 }
 
 /* A page arriving after a click in the sidebar — motion that answers the click, nothing more. */
+/* Settings' dimmed window comes in under its panel (SettingsPanel). */ @keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 @keyframes arrive {
   from {
     opacity: 0;
