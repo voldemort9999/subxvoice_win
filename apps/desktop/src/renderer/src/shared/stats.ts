@@ -84,7 +84,7 @@ export interface AppBucket {
  * lumped into "Unknown": on macOS the context reader is not built yet, and an "Unknown" bar
  * topping the chart would look like a bug.
  */
-export function byApp(records: SessionRecord[], limit = 6): AppBucket[] {
+export function byApp(records: SessionRecord[], limit = Number.POSITIVE_INFINITY): AppBucket[] {
   const apps = new Map<string, AppBucket>();
   for (const record of records) {
     const name = record.context.appName;
@@ -94,7 +94,8 @@ export function byApp(records: SessionRecord[], limit = 6): AppBucket[] {
     bucket.words += wordCount(record.finalText);
     apps.set(name, bucket);
   }
-  return [...apps.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+  // By words, as the list shows them (by dictations, an app with 53 words sat above one with 79).
+  return [...apps.values()].sort((a, b) => b.words - a.words || b.count - a.count).slice(0, limit);
 }
 
 /** Dictations per hour of the day, 0–23, so the quiet hours are visible too. */

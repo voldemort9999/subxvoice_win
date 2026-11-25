@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { dayKey } from "../../../shared/day-key";
 import { formatCount, formatSpan, formatWords } from "../shared/format";
 import { useDayTotals, useHistory } from "../shared/hooks";
 import {
@@ -6,7 +7,6 @@ import {
   byApp,
   byDay,
   byHour,
-  cleanup,
   longest,
   personalBests,
   rangeStart,
@@ -37,8 +37,17 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
   const records = useHistory();
   const totals = useDayTotals();
   const [range, setRange] = useState<Range>("30");
-  const [learned, setLearned] = useState<number | null>(null);
-  useEffect(() => void window.subx.dictionary.list().then((entries) => setLearned(entries.length)), []);
+  const [dictionary, setDictionary] = useState<{ all: number; learned: number } | null>(null);
+  useEffect(
+    () =>
+      void window.subx.dictionary.list().then((entries) =>
+        setDictionary({
+          all: entries.length,
+          learned: entries.filter((entry) => entry.source === "learned").length,
+        }),
+      ),
+    [],
+  );
   if (!records || !totals) return null;
 
   // Empty only when nothing was ever said: the totals outlive deleted dictations.
@@ -49,12 +58,19 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
   const days = Number(range);
   // Words and time from the daily totals; what needs the text (apps, scripts, the longest
   // dictation) from the dictations still kept.
-  const buckets = byDay(records, days).map((bucket) => ({ ...bucket, words: wordsOn(totals, bucket.start) }));
+  const buckets = byDay(records, days).map((bucket) => {
+    const day = totals[dayKey(bucket.start)];
+    return {
+      ...bucket,
+      words: wordsOn(totals, bucket.start),
+      dictations: day?.dictations ?? bucket.records.length,
+      ms: day?.speakingMs ?? 0,
+    };
+  });
   const inRange = buckets.flatMap((bucket) => bucket.records);
   const period = sumTotals(totals, rangeStart(days));
   const words = period.words;
   const saved = savedMsOf(period);
-  const done = cleanup(inRange);
   const mix = scripts(inRange);
   const apps = byApp(inRange);
   const hours = byHour(inRange);
@@ -85,69 +101,44 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
       <Figures>
         <Figure label="Words" value={formatCount(words)} note={`In ${days} days`} />
         <Figure label="Time saved" value={formatSpan(saved)} note="Against typing at 40 wpm" mark />
+        {/* How often they spoke, and how much each time (the Mac app's Dictations). */}
         <Figure
-          label="Tidied for you"
-          value={formatCount(done.rewritten)}
+          label="Dictations"
+          value={formatCount(period.dictations)}
           note={
-            done.spoken ? `${Math.round((done.rewritten / done.spoken) * 100)}% of dictations` : undefined
+            period.dictations > 0
+              ? `About ${formatCount(Math.round(words / period.dictations))} words each`
+              : undefined
           }
         />
         <Figure
           label="Your words"
-          value={learned === null ? "-" : formatCount(learned)}
-          note="In your dictionary"
+          value={dictionary === null ? "-" : formatCount(dictionary.all)}
+          note={
+            dictionary && dictionary.learned > 0
+              ? `${formatCount(dictionary.learned)} learned from your fixes`
+              : "In your dictionary"
+          }
         />
       </Figures>
-
-      <Section title="What SUBXVoice handled">
-        {done.spoken === 0 ? (
-          <Empty>Nothing said in this period.</Empty>
-        ) : (
-          <ul className="grid gap-x-10 gap-y-6 md:grid-cols-3">
-            <Handled
-              value={done.rewritten}
-              label="times rewritten"
-              body="Corrected, punctuated and laid out after you spoke, before it was typed."
-            />
-            <Handled
-              value={done.trimmed}
-              label="words taken out"
-              body="Filler words, repeats and the words you took back, removed before anything was typed."
-            />
-            <Handled
-              value={mix.mixed}
-              label="language mixes"
-              body="Dictations with two languages in one breath, each kept in its own words."
-            />
-          </ul>
-        )}
-      </Section>
 
       <Section title="Words per day">
         <DailyBars buckets={buckets} />
       </Section>
 
       <div className="grid gap-10 md:grid-cols-2">
-        <Section title="Where your words went">
+        <Section
+          title="Where your words went"
+          action={
+            apps.length > 1 ? (
+              <span className="text-[13px] text-ink-soft">{apps.length} apps</span>
+            ) : undefined
+          }
+        >
           {apps.length === 0 ? (
             <Empty>No app recorded yet for these dictations.</Empty>
           ) : (
-            <ul className="space-y-3">
-              {apps.map((app) => (
-                <li key={app.name}>
-                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                    <span className="truncate font-semibold">{app.name}</span>
-                    <span className="figure-num shrink-0 text-xs text-ink-soft">
-                      {formatWords(app.words)}
-                    </span>
-                  </div>
-                  <Track
-                    percent={Math.max(3, (app.count / (apps[0]?.count || 1)) * 100)}
-                    tone="bg-ink-soft"
-                  />
-                </li>
-              ))}
-            </ul>
+            <AppsList apps={apps} />
           )}
         </Section>
 
@@ -232,20 +223,6 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
   );
 }
 
-function Handled({ value, label, body }: { value: number; label: string; body: string }) {
-  return (
-    <li>
-      <p className="figure text-[34px]">
-        {formatCount(value)}
-        <span className="ml-1.5 font-sans text-[14px] font-medium tracking-normal text-ink-soft">
-          {label}
-        </span>
-      </p>
-      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">{body}</p>
-    </li>
-  );
-}
-
 const hourName = (hour: number) =>
   new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" }).replace(":00", "");
 
@@ -257,33 +234,75 @@ function Track({ percent, tone }: { percent: number; tone: string }) {
   );
 }
 
-function DailyBars({ buckets }: { buckets: ReturnType<typeof byDay> }) {
+type DayBar = ReturnType<typeof byDay>[number] & { dictations: number; ms: number };
+
+function DailyBars({ buckets }: { buckets: DayBar[] }) {
   const max = Math.max(...buckets.map((bucket) => bucket.words), 1);
   const dense = buckets.length > 30;
   const last = buckets.length - 1;
+  const [pointed, setPointed] = useState<number | null>(null);
+  const day = pointed === null ? undefined : buckets[pointed];
 
   return (
     <figure className="m-0">
-      <div
-        className="flex h-32 items-end gap-[3px]"
-        role="img"
-        aria-label={`Words dictated per day over the last ${buckets.length} days`}
-      >
-        {buckets.map((bucket, index) => (
+      <div className="relative">
+        {day && pointed !== null && (
+          // Above the chart, over the day pointed at, kept inside the chart's width.
           <div
-            key={bucket.start}
-            className="flex h-full flex-1 flex-col justify-end"
-            title={`${new Date(bucket.start).toLocaleDateString()}: ${formatWords(bucket.words)}`}
+            className="pointer-events-none absolute bottom-full z-10 mb-2 w-max min-w-[150px] -translate-x-1/2 rounded-[10px] border border-rule bg-paper px-3 py-2 text-xs shadow-[0_6px_18px_rgb(0_0_0/12%)]"
+            style={{ left: `clamp(80px, ${((pointed + 0.5) / buckets.length) * 100}%, calc(100% - 80px))` }}
           >
-            <div
-              // Today is the one bar still growing, so it carries the accent.
-              className={`w-full rounded-t-[2px] ${
-                bucket.words ? (index === last ? "bg-accent" : "bg-ink-soft") : "bg-rule-strong"
-              }`}
-              style={{ height: bucket.words ? `${Math.max(4, (bucket.words / max) * 100)}%` : 2 }}
-            />
+            <p className="font-semibold text-ink">
+              {new Date(day.start).toLocaleDateString([], {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              })}
+            </p>
+            {day.words > 0 || day.dictations > 0 ? (
+              <>
+                <p className="figure-num mt-0.5 text-ink">{formatWords(day.words)}</p>
+                <p className="figure-num text-ink-soft">
+                  {formatCount(day.dictations)} {day.dictations === 1 ? "dictation" : "dictations"}
+                  {day.ms > 0 && <> · {formatSpan(day.ms)} speaking</>}
+                </p>
+              </>
+            ) : (
+              <p className="mt-0.5 text-ink-soft">Nothing dictated</p>
+            )}
           </div>
-        ))}
+        )}
+        <div
+          className="flex h-32 items-end gap-[3px]"
+          role="img"
+          aria-label={`Words dictated per day over the last ${buckets.length} days`}
+          onMouseLeave={() => setPointed(null)}
+        >
+          {buckets.map((bucket, index) => (
+            // The whole column answers, not only a bar a few pixels wide. Pointer detail only: the
+            // chart reads as one labelled image to a screen reader, as it did before.
+            // biome-ignore lint/a11y/noStaticElementInteractions: pointer-only detail over a labelled chart
+            <div
+              key={bucket.start}
+              className="flex h-full flex-1 flex-col justify-end"
+              onMouseEnter={() => setPointed(index)}
+            >
+              <div
+                // Today is the one bar still growing, so it carries the accent; the one pointed at stands out.
+                className={`w-full rounded-t-[2px] transition-colors ${
+                  pointed === index
+                    ? "bg-ink"
+                    : bucket.words
+                      ? index === last
+                        ? "bg-accent"
+                        : "bg-ink-soft"
+                      : "bg-rule-strong"
+                }`}
+                style={{ height: bucket.words ? `${Math.max(4, (bucket.words / max) * 100)}%` : 2 }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       <div className="mt-2 flex justify-between border-t border-rule pt-2 text-xs text-ink-faint">
         <span>
@@ -330,5 +349,36 @@ function HourStrip({ hours }: { hours: number[] }) {
         <span>midnight</span>
       </div>
     </figure>
+  );
+}
+
+/**
+ * Every app the words went into, one line each (name, bar, words), ranked by words: six in sight and
+ * the rest scrolling inside the list, so the page keeps its size (the Mac app, 92bf3ca, 23bbb63).
+ * While more is below, the last line fades and the scroll bar stays.
+ */
+function AppsList({ apps }: { apps: { name: string; words: number }[] }) {
+  const [more, setMore] = useState(apps.length > 6);
+  const top = apps[0]?.words || 1;
+  return (
+    <ul
+      onScroll={(event) => {
+        const list = event.currentTarget;
+        setMore(list.scrollTop + list.clientHeight < list.scrollHeight - 2);
+      }}
+      className={`m-0 max-h-[204px] list-none space-y-0 overflow-y-auto p-0 pr-2 ${
+        more ? "[mask-image:linear-gradient(to_bottom,black_80%,transparent)]" : ""
+      } ${apps.length > 6 ? "[scrollbar-gutter:stable]" : ""}`}
+    >
+      {apps.map((app) => (
+        <li key={app.name} className="grid h-[34px] grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3">
+          <span className="truncate font-semibold">{app.name}</span>
+          <Track percent={Math.max(3, (app.words / top) * 100)} tone="bg-ink-soft" />
+          <span className="figure-num min-w-[4.5rem] text-right text-xs text-ink-soft">
+            {formatWords(app.words)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

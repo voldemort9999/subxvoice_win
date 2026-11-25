@@ -93,17 +93,17 @@ describe("grouping for the charts", () => {
     expect(buckets.reduce((total, bucket) => total + bucket.words, 0)).toBe(0);
   });
 
-  it("ranks apps by how often they were dictated into", () => {
+  it("ranks apps by the words that went into them", () => {
     const apps = byApp([
       record({ context: { appName: "Code" }, finalText: "a b" }),
       record({ context: { appName: "Code" }, finalText: "c" }),
-      record({ context: { appName: "chrome" }, finalText: "d" }),
+      record({ context: { appName: "chrome" }, finalText: "d e f g" }),
       // No app name: macOS cannot read one yet, and an "Unknown" bar would look like a bug.
       record({ finalText: "e" }),
     ]);
-    expect(apps.map((app) => app.name)).toEqual(["Code", "chrome"]);
-    expect(apps[0]?.count).toBe(2);
-    expect(apps[0]?.words).toBe(3);
+    expect(apps.map((app) => app.name)).toEqual(["chrome", "Code"]);
+    expect(apps[1]?.count).toBe(2);
+    expect(apps[1]?.words).toBe(3);
   });
 
   it("buckets by hour across the whole day", () => {
