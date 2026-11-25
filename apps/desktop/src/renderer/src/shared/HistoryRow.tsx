@@ -21,7 +21,10 @@ export function HistoryRow({ record }: { record: SessionRecord }) {
               aria-expanded={open}
               className="block w-full text-left"
             >
-              <p className={`voice-text text-[14px] ${open ? "" : "truncate"}`}>{record.finalText}</p>
+              {/* Selectable once opened: selectable text on every row was the heaviest part of scrolling (Mac cfec732). */}
+              <p className={`voice-text text-[14px] ${open ? "" : "truncate select-none"}`}>
+                {record.finalText}
+              </p>
             </button>
           ) : (
             <p className="truncate text-ink-soft">No text came back for this one.</p>

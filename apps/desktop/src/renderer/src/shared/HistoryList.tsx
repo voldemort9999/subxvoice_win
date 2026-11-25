@@ -1,5 +1,5 @@
 import type { SessionRecord } from "@subx/core";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dayLabel, formatCount, formatWords, startOfDay } from "./format";
 import { HistoryRow } from "./HistoryRow";
 import { SearchIcon } from "./icons";
@@ -12,6 +12,10 @@ import { Empty, FIELD, MoreMenu } from "./ui";
  */
 export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hotkey: string }) {
   const [query, setQuery] = useState("");
+  // Older dictations join 30 at a time as the list's end comes into view; a search shows every match
+  // at once (the Mac app, cfec732, fadb9bf).
+  const [limit, setLimit] = useState(40);
+  const end = useRef<HTMLDivElement>(null);
 
   const matches = useMemo(() => {
     if (!records) return [];
@@ -25,8 +29,20 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
     });
   }, [records, query]);
 
+  const shown = query.trim() ? matches : matches.slice(0, limit);
+  const more = shown.length < matches.length;
+  useEffect(() => {
+    const sentinel = end.current;
+    if (!sentinel || !more) return;
+    const watch = new IntersectionObserver((seen) => {
+      if (seen.some((item) => item.isIntersecting)) setLimit((now) => now + 30);
+    });
+    watch.observe(sentinel);
+    return () => watch.disconnect();
+  }, [more]);
+
   const groups = new Map<number, SessionRecord[]>();
-  for (const record of matches) {
+  for (const record of shown) {
     const day = startOfDay(record.createdAt);
     groups.set(day, [...(groups.get(day) ?? []), record]);
   }
@@ -81,6 +97,7 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
               </ul>
             </section>
           ))}
+          {more && <div ref={end} className="h-px" />}
         </div>
       )}
 
@@ -88,7 +105,8 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
         <span>Recordings and transcripts are stored only on this PC.</span>
         <span className="figure-num">
           {query ? `${matches.length} of ${records.length} · ` : ""}
-          {formatWords(totalWords(matches))}
+          {/* This device's: the total above is the account's, from every device (Mac c6ed4fe). */}
+          {formatWords(totalWords(matches))} on this device
         </span>
       </p>
     </section>
