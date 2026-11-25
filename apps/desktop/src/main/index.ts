@@ -55,7 +55,7 @@ import { createPlatform } from "./platform";
 import { apiUrl, clientHeaders, createStt, devToken, loadDevEnv } from "./providers";
 import { deleteRecording, recordingsDir, saveRecording, setRecordingsDir } from "./recordings";
 import { loadPage, PRELOAD_PATH } from "./renderer";
-import { addStarterWords } from "./starter-words";
+import { addStarterWords, fixCapitalNames } from "./starter-words";
 import { JsonDictionaryStore, JsonFile, JsonSettingsStore } from "./stores";
 import { createTray } from "./tray";
 import { checkForUpdate, installUpdate, startUpdater, updateState } from "./updater";
@@ -506,7 +506,10 @@ async function start(): Promise<void> {
     if (!state.signedIn || !state.onboarded) return;
     givingStarterWords = givingStarterWords
       .then(async () => {
-        if ((await starterWords.read()).added) return;
+        if ((await starterWords.read()).added) {
+          if ((await fixCapitalNames(dictionary, state.name)) > 0) void voice.pushDictionary();
+          return;
+        }
         if ((await addStarterWords(dictionary, state.name)) > 0) void voice.pushDictionary();
         await starterWords.write({ added: true });
       })

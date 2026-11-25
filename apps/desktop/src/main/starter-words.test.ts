@@ -1,7 +1,7 @@
 import type { DictionaryEntry } from "@subx/core";
 import { MemoryDictionary } from "@subx/core/fakes";
 import { describe, expect, it } from "vitest";
-import { addStarterWords, nameWords, PRODUCT_WORD } from "./starter-words";
+import { addStarterWords, fixCapitalNames, nameWords, PRODUCT_WORD } from "./starter-words";
 
 describe("the words every dictionary starts with", () => {
   it("splits a name into words, with a capital where it was typed in lowercase", () => {
@@ -23,5 +23,20 @@ describe("the words every dictionary starts with", () => {
     );
     // A second time adds nothing.
     expect(await addStarterWords(dictionary, "choudhary aryan", 2)).toBe(0);
+  });
+});
+
+describe("names in capitals", () => {
+  it("gives a name typed all in capitals a capital, and keeps short initials", () => {
+    expect(nameWords("BHAVESH PARMAR")).toEqual(["Bhavesh", "Parmar"]);
+    expect(nameWords("AJ Styles")).toEqual(["AJ", "Styles"]);
+  });
+
+  it("fixes a name given in capitals in place", async () => {
+    const dictionary = new MemoryDictionary([{ word: "BHAVESH", misheardAs: ["bhavish"], source: "you" }]);
+    expect(await fixCapitalNames(dictionary, "BHAVESH")).toBe(1);
+    expect((await dictionary.all()).map((entry) => [entry.word, entry.misheardAs])).toEqual([
+      ["Bhavesh", ["bhavish"]],
+    ]);
   });
 });

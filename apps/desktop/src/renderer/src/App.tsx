@@ -143,5 +143,10 @@ function greeting(name: string): string {
   const part =
     hour < 5 ? "Up late" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const first = name.trim().split(/\s+/)[0] ?? "";
-  return first ? `${part}, ${first.charAt(0).toUpperCase()}${first.slice(1)}` : part;
+  // A name saved all in capitals is greeted as a name ("BHAVESH" → "Bhavesh"), as in the dictionary.
+  const shouted = first === first.toUpperCase() && [...first].length > 3;
+  const shown = shouted
+    ? first.charAt(0) + first.slice(1).toLowerCase()
+    : first.charAt(0).toUpperCase() + first.slice(1);
+  return first ? `${part}, ${shown}` : part;
 }
