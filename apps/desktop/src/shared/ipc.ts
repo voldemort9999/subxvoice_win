@@ -18,9 +18,6 @@ export const IPC = {
   authResendEmailCode: "auth:resend-email-code",
   authDeleteAccount: "auth:delete-account",
   authGoogle: "auth:google",
-  authAccounts: "auth:accounts",
-  authSwitch: "auth:switch",
-  authAddAccount: "auth:add-account",
   authSignOut: "auth:sign-out",
   authSetProfile: "auth:set-profile",
   authUsage: "auth:usage",
@@ -334,16 +331,6 @@ export interface AccountState {
 }
 
 /** The Google account last signed in on this Mac, offered as "Continue as …" after a sign-out. */
-/** An account signed in on this Mac before, kept so switching between them is one click. */
-export interface RememberedAccount {
-  id: string;
-  email: string;
-  name: string;
-  /** data: URL or "". */
-  photo: string;
-  current: boolean;
-}
-
 export interface LastGoogleAccount {
   email: string;
   name: string;
@@ -434,14 +421,6 @@ export interface SubxApi {
     /** The computers this account uses SUBXVoice on; asked only when the account page opens. */
     devices(): Promise<AccountDevice[]>;
     onChanged(listener: (state: AccountState) => void): () => void;
-    /**
-     * Accounts remembered on this Mac, to switch between (say work and personal). The Swift app
-     * answers; the Electron app has no handler, and the menu then leaves switching out.
-     */
-    accounts(): Promise<RememberedAccount[]>;
-    switchTo(id: string): Promise<void>;
-    /** Keeps this account remembered and shows sign-in for another. */
-    addAccount(): Promise<void>;
   };
   team: {
     /** Null when the server can't be reached. */

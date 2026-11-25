@@ -197,8 +197,6 @@ export class WinHotkey implements Hotkey {
   private bindings: { groups: number[][]; own: Set<number>; mode: Mode }[] = [];
   private held: Mode | null = null;
   private cancelled = false;
-  /** Other keys already down when the chord was pressed (see tick). */
-  private already = new Set<number>();
   private escape = false;
   private escapeDown = false;
   private readonly down: (vk: number) => boolean;
@@ -309,9 +307,6 @@ export class WinHotkey implements Hotkey {
       if (!match) return;
       this.held = match.mode;
       this.cancelled = false;
-      // Keys already down are not "another key pressed while holding": a media key Windows kept
-      // reporting as held (0xB3, dev PC 2026-11-18) cancelled every command the moment it began.
-      this.already = new Set(otherKeysDown(match.own, this.down));
       onEvent({ type: "pressed", mode: match.mode });
       return;
     }
@@ -323,18 +318,10 @@ export class WinHotkey implements Hotkey {
       this.held = null;
       if (!this.cancelled) onEvent({ type: "released", mode });
       this.cancelled = false;
-      return;
     }
-    // Only scan the whole keyboard while the hotkey is actually held — a rare, short window.
-    // A key that was down at the press counts again once it has been let go and pressed anew.
-    for (const vk of this.already) if (!this.down(vk)) this.already.delete(vk);
-    const other = binding
-      ? otherKeysDown(binding.own, this.down).find((vk) => !this.already.has(vk))
-      : undefined;
-    if (!this.cancelled && other !== undefined) {
-      this.cancelled = true;
-      onEvent({ type: "cancel", key: other });
-    }
+    // Other keys pressed while the hotkey is held no longer cancel: only Esc stops a dictation (the
+    // Mac app's rule since efe7c90; the user chose it for Windows too, 2026-11-25). A stray key mid-
+    // sentence used to throw the whole dictation away. A quick Ctrl+Win+→ is a tap, dropped as one.
   }
 }
 

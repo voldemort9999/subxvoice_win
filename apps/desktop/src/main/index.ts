@@ -935,15 +935,9 @@ async function start(): Promise<void> {
   });
 
   let hotkeyRetry: NodeJS.Timeout | undefined;
-  /** "Pause dictation" in the menu bar: the hotkey is let go until resumed (or the app restarts). */
-  let paused = false;
   const registerHotkey = async (): Promise<void> => {
     // One retry loop at most, even when a settings change re-registers while a retry is pending.
     clearTimeout(hotkeyRetry);
-    if (paused) {
-      await platform.hotkey.unregisterAll().catch(() => {});
-      return;
-    }
     await platform.hotkey
       .register(await bindings(), (event) => dictation.handleHotkey(event))
       .then(() => {
@@ -1012,7 +1006,7 @@ async function start(): Promise<void> {
           : null,
         microphoneId: chosen.microphoneId,
         languages: (await voice.current().catch(() => null))?.languages ?? null,
-        paused,
+        pillShown: (await settings.all()).pillWhenIdle,
         last: records.find((record) => record.finalText)?.finalText ?? null,
       };
     },
@@ -1025,10 +1019,8 @@ async function start(): Promise<void> {
           if (current) return voice.update({ languages: { ...current.languages, hinglish: on } });
         });
       },
-      setPaused: (next) => {
-        paused = next;
-        void registerHotkey();
-      },
+      setPillShown: (on) => void changeSettings({ pillWhenIdle: on }),
+      addWord: () => openMainWindow({ page: "dictionary" }),
       copyLast: () => {
         void history.recent(1).then(([record]) => {
           if (record?.finalText) clipboard.writeText(record.finalText);

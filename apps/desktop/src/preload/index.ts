@@ -21,9 +21,6 @@ const api: SubxApi = {
     usage: () => ipcRenderer.invoke(IPC.authUsage),
     devices: () => ipcRenderer.invoke(IPC.accountDevices),
     onChanged: (listener) => subscribe(IPC.authChanged, listener),
-    accounts: () => ipcRenderer.invoke(IPC.authAccounts),
-    switchTo: (id) => ipcRenderer.invoke(IPC.authSwitch, id),
-    addAccount: () => ipcRenderer.invoke(IPC.authAddAccount),
   },
   team: {
     get: () => ipcRenderer.invoke(IPC.teamGet),

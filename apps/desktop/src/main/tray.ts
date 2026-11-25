@@ -17,7 +17,8 @@ export interface TrayState {
   microphoneId: string;
   /** Null until the account's settings have been read once. */
   languages: VoiceLanguages | null;
-  paused: boolean;
+  /** The pill shows while idle (setting `pillWhenIdle`), and is not hidden for a while from its menu. */
+  pillShown: boolean;
   /** The most recent dictation's text, or null when there is none. */
   last: string | null;
 }
@@ -27,8 +28,9 @@ export interface TrayActions {
   openSettings(tab: string): void;
   useMicrophone(id: string): void;
   setHinglish(on: boolean): void;
-  setPaused(paused: boolean): void;
+  setPillShown(on: boolean): void;
   copyLast(): void;
+  addWord(): void;
   checkForUpdates(): void;
 }
 
@@ -60,22 +62,20 @@ export function menu(state: TrayState, actions: TrayActions): MenuItemConstructo
   const items: MenuItemConstructorOptions[] = [
     { label: state.name ? `Hi, ${state.name}` : "SUBXVoice", enabled: false },
     { label: todayLine(state.today), enabled: false },
-    {
-      label: state.paused
-        ? "Paused: the hotkey does nothing"
-        : `Hold ${hotkeyLabel(state.hotkey)} to dictate`,
-      enabled: false,
-    },
+    { label: `Hold ${hotkeyLabel(state.hotkey)} to dictate`, enabled: false },
     { type: "separator" },
   ];
   if (state.microphones) items.push({ label: "Microphone", submenu: microphones(state, actions) });
+  // The Mac app's menu (efe7c90): Pause dictation is gone (Esc stops a dictation); Show pill and Add a
+  // word are in. Its "Paste last dictation" lives in the pill's menu here: clicking the tray moves the
+  // focus to the taskbar, so a paste from it would land there, not in the user's app.
   items.push(
     { label: "Languages", submenu: languages(state, actions) },
     {
-      label: "Pause dictation",
+      label: "Show the pill",
       type: "checkbox",
-      checked: state.paused,
-      click: () => actions.setPaused(!state.paused),
+      checked: state.pillShown,
+      click: () => actions.setPillShown(!state.pillShown),
     },
     { type: "separator" },
     {
@@ -85,6 +85,7 @@ export function menu(state: TrayState, actions: TrayActions): MenuItemConstructo
       ...(state.last ? { sublabel: preview(state.last) } : {}),
       click: actions.copyLast,
     },
+    { label: "Add a word to the dictionary...", click: actions.addWord },
     { type: "separator" },
     { label: "Open SUBXVoice", click: actions.open },
     { label: "Settings...", click: () => actions.openSettings("general") },

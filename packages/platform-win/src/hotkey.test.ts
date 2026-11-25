@@ -58,20 +58,31 @@ describe("WinHotkey", () => {
     expect(events).toEqual([]);
   });
 
-  it("cancels on another key, and does not then report a release", () => {
+  it("another key pressed while holding does not stop the dictation; the release still ends it", () => {
+    // Only Esc stops a dictation (the Mac app's rule since efe7c90; the user chose it for Windows,
+    // 2026-11-25): a stray key mid-sentence used to throw the whole dictation away.
     const { held, events, tick } = keyboard();
     held.add(VK.control).add(VK.lwin);
     tick();
-    held.add(D); // Ctrl+Win+D — a Windows shortcut, not dictation
+    held.add(D);
     tick();
-    tick(); // one cancel only
+    tick();
     held.clear();
     tick();
-    // The key that cancelled is named, so a log can tell it from a short tap (S-024).
     expect(events).toEqual([
       { type: "pressed", mode: "exact" },
-      { type: "cancel", key: D },
+      { type: "released", mode: "exact" },
     ]);
+  });
+
+  it("Esc stops a dictation that is being watched", () => {
+    const { held, events, tick, hotkey } = keyboard();
+    held.add(VK.control).add(VK.lwin);
+    tick();
+    hotkey.watchEscape(true);
+    held.add(0x1b);
+    tick();
+    expect(events).toContainEqual({ type: "cancel", key: 0x1b });
   });
 
   it("a key already down before the chord (a stuck media key) does not cancel it", () => {
@@ -90,19 +101,6 @@ describe("WinHotkey", () => {
     expect(events).toEqual([
       { type: "pressed", mode: "exact" },
       { type: "released", mode: "exact" },
-    ]);
-  });
-
-  it("still cancels on another key pressed during the hold while a stuck key is down", () => {
-    const { held, events, tick } = keyboard();
-    held.add(0xb3);
-    held.add(VK.control).add(VK.lwin);
-    tick();
-    held.add(D);
-    tick();
-    expect(events).toEqual([
-      { type: "pressed", mode: "exact" },
-      { type: "cancel", key: D },
     ]);
   });
 
