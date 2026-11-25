@@ -172,3 +172,94 @@ export async function waitForModifiersUp(timeoutMs = 1500): Promise<boolean> {
   }
   return false;
 }
+
+// ---------------------------------------------------------------- the clipboard, kept private
+//
+// Dictated text goes through the clipboard on its way into the app, and Windows' clipboard history
+// (Win+V) and cloud clipboard kept every dictation. The Mac app marks it transient (fbeacae); Windows'
+// equivalent is three registered formats put on with the text, in the same open: a monitor that
+// reads the clipboard on its change sees them at once. Electron's clipboard cannot add them in the
+// same write, so this is Win32; if anything here fails the caller writes the text the usual way.
+
+let clip: ReturnType<typeof bindClipboard> | null = null;
+
+function bindClipboard() {
+  const user = koffi.load("user32.dll");
+  const kernel = koffi.load("kernel32.dll");
+  return {
+    open: user.func("__stdcall", "OpenClipboard", "int", ["void *"]),
+    empty: user.func("__stdcall", "EmptyClipboard", "int", []),
+    close: user.func("__stdcall", "CloseClipboard", "int", []),
+    set: user.func("__stdcall", "SetClipboardData", "void *", ["uint32", "void *"]),
+    available: user.func("__stdcall", "IsClipboardFormatAvailable", "int", ["uint32"]),
+    register: user.func("__stdcall", "RegisterClipboardFormatW", "uint32", ["str16"]),
+    alloc: kernel.func("__stdcall", "GlobalAlloc", "void *", ["uint32", "uintptr"]),
+    lock: kernel.func("__stdcall", "GlobalLock", "void *", ["void *"]),
+    unlock: kernel.func("__stdcall", "GlobalUnlock", "int", ["void *"]),
+  };
+}
+
+const GMEM_MOVEABLE = 0x0002;
+const CF_UNICODETEXT = 13;
+/** The formats Windows' clipboard history and cloud clipboard honour (Microsoft's clipboard docs). */
+const PRIVATE_FORMATS: [string, Uint8Array][] = [
+  ["ExcludeClipboardContentFromMonitorProcessing", new Uint8Array(1)],
+  ["CanIncludeInClipboardHistory", new Uint8Array(4)],
+  ["CanUploadToCloudClipboard", new Uint8Array(4)],
+];
+
+/** A movable global block holding `bytes`, which SetClipboardData takes over. */
+function globalWith(c: NonNullable<typeof clip>, bytes: Uint8Array): unknown {
+  const handle = c.alloc(GMEM_MOVEABLE, bytes.length);
+  if (!handle) return null;
+  const at = c.lock(handle);
+  if (!at) return null;
+  koffi.encode(at, koffi.array("uint8", bytes.length), bytes);
+  c.unlock(handle);
+  return handle;
+}
+
+/** Another app can hold the clipboard open for a moment; a few short tries, never long. */
+function openClipboard(c: NonNullable<typeof clip>): boolean {
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (c.open(null)) return true;
+    Atomics.wait(pause, 0, 0, 10);
+  }
+  return false;
+}
+
+/**
+ * Puts text on the clipboard kept out of clipboard history and the cloud clipboard. False when it
+ * could not (the clipboard was busy, or a call failed): the caller then writes it as usual.
+ */
+export function writePrivateClipboardText(text: string): boolean {
+  try {
+    clip ??= bindClipboard();
+    const c = clip;
+    if (!openClipboard(c)) return false;
+    try {
+      if (!c.empty()) return false;
+      const bytes = new Uint8Array(Buffer.from(`${text}\0`, "utf16le"));
+      const textHandle = globalWith(c, bytes);
+      if (!textHandle || !c.set(CF_UNICODETEXT, textHandle)) return false;
+      for (const [name, data] of PRIVATE_FORMATS) {
+        const format = c.register(name);
+        const handle = format ? globalWith(c, data) : null;
+        if (handle) c.set(format, handle);
+      }
+      return true;
+    } finally {
+      c.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a registered format is on the clipboard now (for the live test). */
+export function clipboardHas(name: string): boolean {
+  clip ??= bindClipboard();
+  const format = clip.register(name);
+  return format !== 0 && clip.available(format) !== 0;
+}

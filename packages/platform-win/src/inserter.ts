@@ -1,7 +1,7 @@
 import { SubxError, type TextInserter } from "@subx/core";
 import { clipboard } from "electron";
 import { restoreClipboardLater, snapshotClipboard } from "./clipboard";
-import { sendChord, VK, waitForModifiersUp } from "./win32";
+import { sendChord, VK, waitForModifiersUp, writePrivateClipboardText } from "./win32";
 
 export interface InserterDeps {
   /**
@@ -52,7 +52,9 @@ export class WinInserter implements TextInserter {
     // pasting before the write lands would paste whatever was there before. The snapshot keeps
     // every format, so an image the user had copied survives the paste.
     const previous = await snapshotClipboard();
-    await clipboard.writeText(text);
+    // Kept out of Windows' clipboard history and cloud clipboard (the Mac app's transient mark,
+    // fbeacae); if the clipboard was busy, the usual write.
+    if (!writePrivateClipboardText(text)) await clipboard.writeText(text);
 
     // The user is usually still letting go of the hotkey; pasting now would send Win+V.
     await waitForModifiersUp();
