@@ -6,7 +6,6 @@ import { CopyButton, type MoreItem, MoreMenu } from "./ui";
 
 export function HistoryRow({ record }: { record: SessionRecord }) {
   const [open, setOpen] = useState(false);
-  const changed = Boolean(record.rawText) && record.rawText !== record.finalText;
 
   return (
     <li className="group py-3">
@@ -32,10 +31,9 @@ export function HistoryRow({ record }: { record: SessionRecord }) {
             <span>{formatTime(record.createdAt)}</span>
             <span>{formatDuration(record.audioMs ?? 0)}</span>
             {record.context.appName && <span className="truncate">{record.context.appName}</span>}
+            {/* The internal error stays in the log: what the person needs is that it was not tidied. */}
             {record.rewriteError && (
-              <span className="truncate font-medium text-accent-ink" title={record.rewriteError}>
-                went in as heard
-              </span>
+              <span className="truncate font-medium text-accent-ink">Not cleaned up</span>
             )}
           </p>
         </div>
@@ -44,13 +42,6 @@ export function HistoryRow({ record }: { record: SessionRecord }) {
         <CopyButton text={record.finalText} />
         <RowMenu record={record} />
       </div>
-
-      {open && changed && (
-        <div className="mt-2.5 ml-11 border-l-2 border-rule-strong pl-3">
-          <p className="mb-1 text-xs text-ink-faint">As it was heard</p>
-          <p className="spoken">{record.rawText}</p>
-        </div>
-      )}
     </li>
   );
 }
@@ -71,11 +62,6 @@ function RowMenu({ record }: { record: SessionRecord }) {
     items.push({
       label: "Download text",
       onClick: () => save(new Blob([record.finalText], { type: "text/plain;charset=utf-8" }), `${name}.txt`),
-    });
-  if (record.rawText && record.rawText !== record.finalText)
-    items.push({
-      label: "Copy as it was heard",
-      onClick: () => navigator.clipboard.writeText(record.rawText),
     });
   items.push({
     label: "Delete",

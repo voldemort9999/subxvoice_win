@@ -62,12 +62,10 @@ export interface PillLook {
   hotkey: string;
   /** Since listening began, for the hands-free timer. */
   elapsedMs: number;
-  /** Show the words as they are heard (Settings → Sound and pill). */
-  liveText: boolean;
   look?: PillStyle;
 }
 
-export function PillView({ state, levels, hover, hotkey, elapsedMs, liveText, look = "classic" }: PillLook) {
+export function PillView({ state, levels, hover, hotkey, elapsedMs, look = "classic" }: PillLook) {
   const c = DARK;
   const locked = state.kind === "listening" && state.locked;
   const idle = state.kind === "idle";
@@ -110,13 +108,6 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, liveText, lo
               <Bars levels={levels} c={c} />
             </>
           )}
-          {/* Hovered hands-free shows how to end it instead: there is room for one or the other. */}
-          {liveText && state.text && !(locked && hover) && (
-            // The newest words, fading in from the left edge: the end of what was said matters now.
-            <span className="flex max-w-[150px] min-w-0 justify-end overflow-hidden text-xs whitespace-nowrap [mask-image:linear-gradient(to_right,transparent,black_28px)]">
-              <span className={c.soft}>{state.text}</span>
-            </span>
-          )}
           {locked && (
             <span className={`font-mono text-[11px] tabular-nums ${c.soft}`}>{clock(elapsedMs)}</span>
           )}
@@ -146,12 +137,6 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, liveText, lo
             <CheckIcon className="h-3 w-3" />
           </span>
           <span className="max-w-[260px] truncate text-[14px]">{state.message}</span>
-          {/* The words went in, but not in the script that was asked for. */}
-          {state.warning && (
-            <span title={state.warning} className={`shrink-0 text-[12px] ${c.accentText}`}>
-              as heard
-            </span>
-          )}
         </span>
       )}
 

@@ -54,7 +54,8 @@ describe("DictationController", () => {
 
     expect(first.cancelled).toBe(true);
     expect(second.finished).toBe(true);
-    expect(states.at(-1)).toEqual({ kind: "done", message: "hello", warning: undefined });
+    // Typed: straight back to rest, no tick and no words (the Mac app, e079b6e).
+    expect(states.at(-1)).toEqual({ kind: "idle" });
     // Not stuck: the next press opens a new stream.
     controller.handleHotkey({ type: "pressed", mode: "style" });
     expect(opens).toHaveLength(3);
@@ -128,14 +129,14 @@ describe("DictationController", () => {
     // Still listening long after both taps: the second press locked it, nothing cancelled it.
     expect(run.cancelled).toBe(false);
     expect(states.at(-1)).toEqual({ kind: "listening", locked: true });
-    controller.heard("bolo");
-    expect(states.at(-1)).toEqual({ kind: "listening", locked: true, text: "bolo" });
 
     now = 5000;
     controller.handleHotkey({ type: "pressed", mode: "exact" });
     await settle();
     expect(run.finished).toBe(true);
-    expect(states.at(-1)).toEqual({ kind: "done", message: "hands free", warning: undefined });
+    expect(states.at(-1)).toEqual({ kind: "idle" });
+    // Nothing heard is ever shown while listening (fbeacae).
+    expect(states.some((state) => state.kind === "listening" && "text" in state)).toBe(false);
     expect(live).toEqual([true, false]);
   });
 

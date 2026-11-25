@@ -214,11 +214,7 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
 
         {tab === "sound" && (
           <div>
-            <PillPreview
-              hotkey={hotkeyLabel(hotkey)}
-              liveText={settings?.pillLiveText ?? true}
-              look={settings?.pillStyle ?? "classic"}
-            />
+            <PillPreview hotkey={hotkeyLabel(hotkey)} look={settings?.pillStyle ?? "classic"} />
             <Field label="Sounds" hint="A soft tick when the microphone opens, and another when it closes.">
               <Toggle
                 label="Play start and stop sounds"
@@ -243,16 +239,6 @@ export function SettingsPage({ info }: { info: AppInfo | null }) {
               <PlaceMap
                 value={settings?.pillPosition ?? "bottom"}
                 onChange={(place) => update({ pillPosition: place })}
-              />
-            </Field>
-            <Field
-              label="Words as you speak"
-              hint="Your words appear in the pill while you talk, so you can see it hears you."
-            >
-              <Toggle
-                label="Show words in the pill while speaking"
-                checked={settings?.pillLiveText ?? true}
-                onChange={(checked) => update({ pillLiveText: checked })}
               />
             </Field>
             <Field
@@ -663,10 +649,10 @@ function NativeMicrophone({ chosen, onChoose }: { chosen: string; onChoose: (id:
 const PREVIEW: { label: string; state: PillState; hover?: boolean }[] = [
   { label: "Waiting", state: { kind: "idle" } },
   { label: "Pointed at", state: { kind: "idle" }, hover: true },
-  { label: "Listening", state: { kind: "listening", text: "let's meet tomorrow at ten" } },
-  { label: "Hands-free", state: { kind: "listening", locked: true, text: "and the report" }, hover: true },
-  { label: "Writing", state: { kind: "processing", message: "let's meet tomorrow at ten" } },
-  { label: "Typed", state: { kind: "done", message: "Let's meet tomorrow at 10." } },
+  { label: "Listening", state: { kind: "listening" } },
+  { label: "Hands-free", state: { kind: "listening", locked: true }, hover: true },
+  { label: "Writing", state: { kind: "processing" } },
+  { label: "Copied", state: { kind: "done", message: "Copied · paste with Ctrl+V" } },
   { label: "Learned a word", state: { kind: "learned", words: ["SUBXVoice"] } },
   { label: "No text box", state: { kind: "unplaced", text: "Let's meet tomorrow at 10." } },
 ];
@@ -675,7 +661,7 @@ const PREVIEW: { label: string; state: PillState; hover?: boolean }[] = [
  * The pill in each of its states, on the dark it usually floats over. The listening bars move,
  * from a made-up voice, so the preview reads as the real thing rather than a diagram.
  */
-function PillPreview({ hotkey, liveText, look }: { hotkey: string; liveText: boolean; look: PillStyle }) {
+function PillPreview({ hotkey, look }: { hotkey: string; look: PillStyle }) {
   const { levels, elapsedMs: elapsed } = useFakeVoice();
 
   return (
@@ -696,7 +682,6 @@ function PillPreview({ hotkey, liveText, look }: { hotkey: string; liveText: boo
                 hover={item.hover ?? false}
                 hotkey={hotkey}
                 elapsedMs={elapsed}
-                liveText={liveText}
                 look={look}
               />
             </div>
@@ -792,12 +777,11 @@ function PillStylePicker({
           >
             <div className="grid h-20 place-items-center bg-[radial-gradient(120%_140%_at_50%_0%,#3a3530,#0f0e0d)]">
               <PillView
-                state={{ kind: "listening", text: "see you tomorrow" }}
+                state={{ kind: "listening" }}
                 levels={levels}
                 hover={false}
                 hotkey={hotkey}
                 elapsedMs={elapsedMs}
-                liveText={false}
                 look={style.id}
               />
             </div>

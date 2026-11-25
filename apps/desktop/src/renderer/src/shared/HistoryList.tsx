@@ -20,7 +20,6 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
       if (!needle) return true;
       return (
         record.finalText.toLowerCase().includes(needle) ||
-        record.rawText.toLowerCase().includes(needle) ||
         (record.context.appName ?? "").toLowerCase().includes(needle)
       );
     });

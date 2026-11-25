@@ -128,7 +128,6 @@ export function Pill() {
           hover={hover}
           hotkey={hotkeyLabel(info?.hotkeys[0]?.keys)}
           elapsedMs={Math.max(0, now - startedAt)}
-          liveText={settings?.pillLiveText ?? true}
           look={settings?.pillStyle ?? "classic"}
         />
       </button>

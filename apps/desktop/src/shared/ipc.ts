@@ -157,8 +157,6 @@ export interface AppSettings {
   /** How long dictations and their recordings are kept on this Mac; older ones are deleted. */
   keepHistory: HistoryKeep;
   pillStyle: PillStyle;
-  /** The words heard so far, in the pill while speaking. */
-  pillLiveText: boolean;
   /** Where on the screen the pill sits: a corner or the middle of an edge. */
   pillPosition: PillPlace;
   /** Add a word to the dictionary when the user corrects it after a paste. */
@@ -356,11 +354,11 @@ export interface PermissionStatus {
 export type PillState =
   | { kind: "idle" }
   /** `text` is what has been heard so far; `locked` is hands-free (the key is no longer held). */
-  | { kind: "listening"; text?: string; locked?: boolean }
+  | { kind: "listening"; locked?: boolean }
   /** `message` carries the finished words while they are pasted. */
   | { kind: "processing"; message?: string }
   /** `warning` says the words went in, but not in the script that was asked for. */
-  | { kind: "done"; message: string; warning?: string }
+  | { kind: "done"; message: string }
   | { kind: "error"; message: string }
   /** Words just learned from the user's own fixes; clicking the pill takes them back out. */
   | { kind: "learned"; words: string[] }

@@ -332,7 +332,6 @@ function assertSettings(value: unknown, accepts: (keys: string) => boolean): Par
   if (typeof input.voiceCleanup === "boolean") patch.voiceCleanup = input.voiceCleanup;
   if (typeof input.pillWhenIdle === "boolean") patch.pillWhenIdle = input.pillWhenIdle;
   if (typeof input.learnWords === "boolean") patch.learnWords = input.learnWords;
-  if (typeof input.pillLiveText === "boolean") patch.pillLiveText = input.pillLiveText;
   if (input.pillStyle === "classic" || input.pillStyle === "line")
     patch.pillStyle = input.pillStyle as AppSettings["pillStyle"];
   if (
@@ -496,7 +495,6 @@ async function start(): Promise<void> {
     muteAudio: false,
     pillWhenIdle: true,
     learnWords: true,
-    pillLiveText: true,
     pillPosition: "bottom",
     keepHistory: "forever",
     pillStyle: "classic",
@@ -741,7 +739,6 @@ async function start(): Promise<void> {
       history,
       saveRecording,
       onHeard: (text) => pill.setState({ kind: "processing", message: text }),
-      onPartial: (text) => dictation.heard(text),
       signedIn: async () => (await account.state()).signedIn,
       account: () => accountDir,
       // Only when a dictation could not start: asked fresh, since it decides what the pill says.

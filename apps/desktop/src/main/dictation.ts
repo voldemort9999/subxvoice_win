@@ -69,7 +69,6 @@ export class DictationController {
   /** A tap was released; a second press inside DOUBLE_TAP_MS locks, otherwise it is cancelled. */
   private tapTimer: NodeJS.Timeout | undefined;
   private live = false;
-  private text = "";
   private mode: Mode = "exact";
   private pressedAt = 0;
   private chunks: Int16Array[] = [];
@@ -163,13 +162,6 @@ export class DictationController {
     this.pill.setState({ kind: "idle" });
   }
 
-  /** Words heard so far, shown in the pill while the user is still speaking. */
-  heard(text: string): void {
-    if (this.state !== "listening") return;
-    this.text = text;
-    this.showListening();
-  }
-
   private lock(): void {
     clearTimeout(this.tapTimer);
     this.tapTimer = undefined;
@@ -181,7 +173,6 @@ export class DictationController {
     this.pill.setState({
       kind: "listening",
       ...(this.locked ? { locked: true } : {}),
-      ...(this.text ? { text: this.text } : {}),
     });
   }
 
@@ -198,7 +189,6 @@ export class DictationController {
     const press = ++this.press;
     this.state = "listening";
     this.locked = false;
-    this.text = "";
     this.setLive(true);
     this.mode = mode;
     this.pressedAt = Date.now();
@@ -282,8 +272,12 @@ export class DictationController {
         // Nowhere to type it: offered for longer, since the user has to act on it.
         this.state = "idle";
         this.show({ kind: "unplaced", text: result.text }, UNPLACED_VISIBLE_MS);
-      } else if (this.state === "processing")
-        this.showResult({ kind: "done", message: result.text, warning: result.warning });
+      } else if (this.state === "processing") {
+        // The words are already where they were typed: no tick and no words, straight back to rest
+        // (the Mac app, e079b6e). A clean-up that failed is said plainly, never its internal error.
+        if (result.warning) this.showResult({ kind: "done", message: "Not cleaned up" });
+        else this.rest();
+      }
     } catch (error) {
       if (this.state === "processing") this.showResult({ kind: "error", message: message(error) });
     } finally {
@@ -299,11 +293,7 @@ export class DictationController {
     this.tapTimer = undefined;
     this.locked = false;
     this.setLive(false);
-    this.state = "idle";
-    const queued = this.queued;
-    this.queued = null;
-    if (queued) this.show(queued, NOTICE_VISIBLE_MS);
-    else this.pill.setState({ kind: "idle" });
+    this.rest();
     await this.mic.stop();
     await this.opening;
     // A new press may have started while this waited; its run and audio are not this one's to drop.
@@ -327,6 +317,17 @@ export class DictationController {
   }
 
   /** Shows the result briefly; a new dictation can start right away. */
+  /** Idle at once; a notice that waited for the dictation (words just learned) shows now. */
+  private rest(): void {
+    this.state = "idle";
+    clearTimeout(this.resetTimer);
+    this.resetTimer = undefined;
+    const queued = this.queued;
+    this.queued = null;
+    if (queued) this.show(queued, NOTICE_VISIBLE_MS);
+    else this.pill.setState({ kind: "idle" });
+  }
+
   private showResult(state: PillState): void {
     this.state = "idle";
     this.show(state, RESULT_VISIBLE_MS);
