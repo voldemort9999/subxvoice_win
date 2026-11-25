@@ -1,7 +1,7 @@
 import type { ClickCatcher } from "@subx/core";
 import { BrowserWindow, type Rectangle, screen, type WebContents } from "electron";
 import { IPC, type MicCommand, type PillState } from "../shared/ipc";
-import { alignment, nearestPlace, PILL_PLACES, type PillPlace } from "../shared/pill-place";
+import { alignment, nearestPlace, PILL_PLACES, type PillPlace, pillZoom } from "../shared/pill-place";
 import { DropTargets, type Spot } from "./drop-targets";
 import { loadPage, PRELOAD_PATH } from "./renderer";
 
@@ -117,6 +117,8 @@ export class PillWindow {
     // A display being added, removed or resized moves where "bottom-centre" is. Without this the
     // pill keeps the coordinates it was given at startup, which after a monitor sleeps or is
     // unplugged can be on no screen at all.
+    // A reload starts at zoom 1 again.
+    this.window.webContents.on("did-finish-load", () => this.window.webContents.setZoomFactor(this.zoom));
     screen.on("display-added", this.reposition);
     screen.on("display-removed", this.reposition);
     screen.on("display-metrics-changed", this.reposition);
@@ -212,8 +214,19 @@ export class PillWindow {
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const rect = placeRect(this.position, workArea);
     this.window.setPosition(rect.x, rect.y);
+    this.scaleFor(workArea.width);
     this.updateArea();
   };
+
+  /** How much the pill is drawn down on this screen (`pillZoom`); kept for the click area. */
+  private zoom = 1;
+
+  private scaleFor(workAreaWidth: number): void {
+    const zoom = pillZoom(workAreaWidth);
+    if (zoom === this.zoom) return;
+    this.zoom = zoom;
+    this.window.webContents.setZoomFactor(zoom);
+  }
 
   /**
    * The mouse went down on the pill. Whether this is a click or a drag is decided here, from where
@@ -334,15 +347,26 @@ export class PillWindow {
     const catcher = this.catcher;
     if (!catcher || this.window.isDestroyed() || this.press) return;
     const [x = 0, y = 0] = this.window.getPosition();
-    const size = this.size;
+    // The page measures in its own (zoomed) pixels; the window and screen are in unzoomed ones.
+    const z = this.zoom;
+    const size = this.size && { width: this.size.width * z, height: this.size.height * z };
     let area: { x: number; y: number; width: number; height: number } | null = null;
     if (size && this.window.isVisible()) {
       // Where the page lays the pill out in its window: against the edge of its corner, 8 px in.
       const { horizontal, vertical } = alignment(this.position);
+      const inset = 8 * z;
       const left =
-        horizontal === "start" ? 8 : horizontal === "end" ? WIDTH - 8 - size.width : (WIDTH - size.width) / 2;
+        horizontal === "start"
+          ? inset
+          : horizontal === "end"
+            ? WIDTH - inset - size.width
+            : (WIDTH - size.width) / 2;
       const top =
-        vertical === "start" ? 8 : vertical === "end" ? HEIGHT - 8 - size.height : (HEIGHT - size.height) / 2;
+        vertical === "start"
+          ? inset
+          : vertical === "end"
+            ? HEIGHT - inset - size.height
+            : (HEIGHT - size.height) / 2;
       area = { x: x + left, y: y + top, width: size.width, height: size.height };
     }
     void catcher.setArea(area).then((caught) => {

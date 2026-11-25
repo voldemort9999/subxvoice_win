@@ -52,3 +52,13 @@ export function alignment(place: PillPlace): {
     vertical: place.startsWith("top") ? "start" : place.startsWith("bottom") ? "end" : "center",
   };
 }
+
+/**
+ * The pill's size against the screen's: full size from 1800 px of work area up, smaller below, never
+ * under 80%. Its pixels match the Mac pill's points, but a 1080p laptop at Windows' 125% (the user's,
+ * 2026-11-25) is 1536 px wide and the pill looked too big there: 0.85 now.
+ * ponytail: width only, a plain ratio; a size setting if people want their own.
+ */
+export function pillZoom(workAreaWidth: number): number {
+  return Math.min(1, Math.max(0.8, Math.round((workAreaWidth / 1800) * 100) / 100));
+}
