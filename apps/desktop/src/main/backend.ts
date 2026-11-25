@@ -78,7 +78,10 @@ export function createBackend(
         },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-    } catch {
+    } catch (error) {
+      // fetch throws for a bad header or a timeout as much as for no network; the user's sentence is
+      // the same, but without the real reason in the log "can't reach" could not be told apart.
+      console.error(`backend: ${path} failed — ${reason(error)}`);
       throw new OfflineError("Can't reach the SUBXVoice server. Check your connection.");
     }
     if (response.status === 401) throw new Error("Sign in again to change these settings.");
@@ -131,4 +134,14 @@ function settingProblem(problems: string[] | undefined): string | null {
   if (/instructions/.test(all)) return "Your instructions can be up to 500 characters.";
   if (/dictionary/.test(all)) return "Your dictionary can hold up to 1,000 words.";
   return "That setting couldn't be saved. Try again, or restart SUBXVoice.";
+}
+
+/** fetch's error and the one under it (undici puts the socket or DNS failure in `cause`). */
+function reason(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause =
+    error.cause instanceof Error
+      ? `: ${(error.cause as Error & { code?: string }).code ?? ""} ${error.cause.message}`
+      : "";
+  return `${error.name} ${error.message}${cause}`;
 }
