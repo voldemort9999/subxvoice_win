@@ -373,3 +373,35 @@ describe("watching single modifier keys", () => {
     expect(events.map((event) => event.type)).toEqual(["pressed", "released"]);
   });
 });
+
+// That a key that writes was pressed (for a snippet's offer and the typing tip), never which one.
+describe("WinHotkey.onTyped", () => {
+  it("hears a writing key once per press, not shortcuts and not while it is held", () => {
+    const held = new Set<number>();
+    const hotkey = new WinHotkey((vk) => held.has(vk));
+    let typed = 0;
+    const off = hotkey.onTyped(() => typed++);
+    const poll = () => {
+      for (let i = 0; i < 3; i++) hotkey.tick(() => {});
+    };
+    held.add(0x41); // A
+    poll();
+    poll(); // still held: not a second press
+    held.delete(0x41);
+    poll();
+    held.add(0x20); // Space
+    poll();
+    held.clear();
+    held.add(0x11).add(0x5a); // Ctrl+Z: a shortcut, not typing
+    poll();
+    held.clear();
+    held.add(0x25); // an arrow does not write
+    poll();
+    expect(typed).toBe(2);
+    off();
+    held.clear();
+    held.add(0x42);
+    poll();
+    expect(typed).toBe(2);
+  });
+});

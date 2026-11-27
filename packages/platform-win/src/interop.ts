@@ -285,15 +285,23 @@ public interface IUIAutomation {
 
 [ComImport, Guid("32eba289-3583-42c9-9c59-3b6d9a1e9b6a"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IUIAutomationTextPattern {
-  void RangeFromPoint(); void RangeFromChild(); void GetSelection(); void GetVisibleRanges();
+  void RangeFromPoint(); void RangeFromChild(); IUIAutomationTextRangeArray GetSelection(); void GetVisibleRanges();
   IUIAutomationTextRange DocumentRange { get; }
+}
+
+[ComImport, Guid("ce4ae76a-e717-4c98-81ea-47371d028eb6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationTextRangeArray {
+  int Length { get; }
+  IUIAutomationTextRange GetElement(int index);
 }
 
 [ComImport, Guid("a543cc6a-f4ae-494b-8239-c814481187a8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IUIAutomationTextRange {
-  void Clone(); void Compare(); void CompareEndpoints(); void ExpandToEnclosingUnit(); void FindAttribute();
+  IUIAutomationTextRange Clone(); void Compare(); void CompareEndpoints(); void ExpandToEnclosingUnit(); void FindAttribute();
   void FindText(); void GetAttributeValue(); void GetBoundingRectangles(); void GetEnclosingElement();
   [return: MarshalAs(UnmanagedType.BStr)] string GetText(int maxLength);
+  void Move(); void MoveEndpointByUnit();
+  void MoveEndpointByRange(int endpoint, IUIAutomationTextRange range, int targetEndpoint);
 }
 
 public static class CmdField {
@@ -317,6 +325,26 @@ public static class CmdField {
       string text = pattern.DocumentRange.GetText(20000);
       return text == null ? "null" : Json(text);
     } catch (Exception) { return "null"; }
+  }
+
+  // Where the cursor is in the focused box, in characters from its start; -1 when it cannot be read
+  // (no Text pattern, a password box, nothing focused). For a snippet's swap: the undo must move it
+  // back by exactly what was pasted (Mac Inserter.replaceLast).
+  public static int CaretOffset() {
+    if (uia == null) uia = (IUIAutomation)new CUIAutomation();
+    IUIAutomationElement e;
+    try { e = uia.GetFocusedElement(); } catch (COMException) { return -1; }
+    if (e == null || Is(e, IsPassword) || !Is(e, IsTextPatternAvailable)) return -1;
+    try {
+      IUIAutomationTextPattern pattern = (IUIAutomationTextPattern)e.GetCurrentPattern(TextPattern);
+      IUIAutomationTextRangeArray selection = pattern.GetSelection();
+      if (selection == null || selection.Length < 1) return -1;
+      IUIAutomationTextRange before = pattern.DocumentRange.Clone();
+      // The document from its start to the selection's start (End = 1, Start = 0).
+      before.MoveEndpointByRange(1, selection.GetElement(0), 0);
+      string text = before.GetText(-1);
+      return text == null ? -1 : text.Length;
+    } catch (Exception) { return -1; }
   }
 
   // What the focused element is, for the paste (focus.ts decides): JSON, or "null" with nothing

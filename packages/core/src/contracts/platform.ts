@@ -34,6 +34,12 @@ export interface Hotkey {
    */
   watchEscape?(on: boolean): void;
   /**
+   * Told each time a key that writes is pressed (letters, digits, punctuation, space; not with a
+   * shortcut's Ctrl, ⌘ or Win), never which one. For a snippet's offer, which typing withdraws, and
+   * the typing tip. Watched only while a listener is attached; returns the way to detach it.
+   */
+  onTyped?(listener: () => void): () => void;
+  /**
    * Records a new binding from the keys the user holds, read the way they will be watched, so
    * Settings can never record a chord this OS cannot watch. Resolves null when cancelled (Esc alone,
    * or `cancel`). The caller stops the watch first. Without it, Settings records from page key events.
@@ -88,6 +94,12 @@ export interface TextInserter {
   insert(text: string): Promise<void | "pasted" | "nowhere">;
   /** Called at key-down, so the check made at key-up is ready (Chromium builds its tree on request). */
   prepare?(): void;
+  /**
+   * Takes back the paste just made (Ctrl+Z / ⌘Z in the app it went to) and puts `text` in its
+   * place: a snippet the person chose after the words went in as said. Only where the cursor can be
+   * read and the undo moved it back by exactly what was pasted; otherwise false, nothing changed.
+   */
+  replaceLast?(text: string): Promise<boolean>;
 }
 
 export type PermissionKind = "microphone" | "accessibility" | "input_monitoring" | "screen_recording";

@@ -71,7 +71,7 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, look = "clas
   const idle = state.kind === "idle";
   // Messages to read and act on (typed, an error, a learned word, nowhere to type) get a larger
   // pill than the listening one: at 12 px they were too small to take in at a glance.
-  const message = ["done", "error", "learned", "unplaced"].includes(state.kind);
+  const message = ["done", "error", "learned", "unplaced", "snippet"].includes(state.kind);
 
   return (
     <div
@@ -105,7 +105,12 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, look = "clas
             <>
               {/* The app the words go into (the Mac app's pill); without one, the recording dot. */}
               {state.kind === "listening" && state.icon ? (
-                <img src={state.icon} alt="" className="h-[18px] w-[18px] shrink-0" draggable={false} />
+                <img
+                  src={state.icon}
+                  alt="Typing into this app"
+                  className="h-[18px] w-[18px] shrink-0"
+                  draggable={false}
+                />
               ) : (
                 <span className={`h-2 w-2 shrink-0 rounded-full ${c.accentBg} animate-pulse`} />
               )}
@@ -164,6 +169,16 @@ export function PillView({ state, levels, hover, hotkey, elapsedMs, look = "clas
             <ClipboardGlyph />
             Copy
           </span>
+        </span>
+      )}
+
+      {/* Offered, never done unasked: the trigger may have been meant as plain words (Mac). */}
+      {state.kind === "snippet" && (
+        <span className="flex min-w-0 items-center gap-3 text-[14px] whitespace-nowrap animate-[pill-in_200ms_ease-out]">
+          <span className={`min-w-0 truncate ${c.soft}`}>
+            Snippet <span className={`font-medium ${c.ink}`}>"{state.trigger}"</span>
+          </span>
+          <span className={`shrink-0 rounded-full ${c.chip} px-3 py-1 font-medium ${c.accentText}`}>Use</span>
         </span>
       )}
 

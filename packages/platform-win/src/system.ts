@@ -38,6 +38,12 @@ export class WinSystem {
     return plain || null;
   }
 
+  /** The cursor's place in the focused box, in characters; null when it cannot be read. */
+  async caretOffset(): Promise<number | null> {
+    const at = Number(await this.worker.run("[CmdField]::CaretOffset()"));
+    return Number.isInteger(at) && at >= 0 ? at : null;
+  }
+
   /** What kind of element has the focus (never its text); null when nothing has. */
   async focusInfo(): Promise<FocusInfo | null> {
     const info = await this.worker.json<FocusInfo | null>("[CmdField]::FocusInfo()");

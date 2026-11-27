@@ -161,4 +161,21 @@ describe("Pipeline", () => {
     expect((await session.finish()).kind).toBe("inserted");
     expect(inserter.inserted).toEqual(["testing SUBXVoice today"]);
   });
+
+  it("types a snippet said on its own, and only offers one said inside a sentence", async () => {
+    const snippets = () => [{ id: "e", triggers: ["my email"], text: "me@example.com" }];
+    const used = await setup("My email.").pipeline.process(audio, "exact", {}, { snippets });
+    expect(used.kind === "inserted" && used.record.finalText).toBe("me@example.com");
+    expect(used.kind === "inserted" && used.record.saidText).toBe("My email.");
+    expect(used.kind === "inserted" && used.record.snippet).toBe("e");
+
+    const offered = await setup("Send it to my email please.").pipeline.process(
+      audio,
+      "exact",
+      {},
+      { snippets },
+    );
+    expect(offered.kind === "inserted" && offered.record.finalText).toBe("Send it to my email please.");
+    expect(offered.kind === "inserted" && offered.offer?.text).toBe("Send it to me@example.com please.");
+  });
 });

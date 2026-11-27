@@ -19,7 +19,14 @@ export interface InserterDeps {
   verifyMs?: number;
   /** Puts the text on the clipboard kept out of clipboard history (win32.ts); false: write it as usual. */
   writePrivate?(text: string): boolean;
+  /** The cursor's place in the focused box, in characters; null when it cannot be read. */
+  caret?(): Promise<number | null>;
+  /** How long the app gets to take a paste back before the cursor is read again. */
+  undoMs?: number;
 }
+
+/** Long enough for an app to take the paste back before it is checked (the Mac waits 150 ms). */
+const UNDO_MS = 150;
 
 /** A paste lands in tens of ms; a slow app gets this long before the words count as lost. */
 const VERIFY_MS = 700;
@@ -37,7 +44,33 @@ const CHECK_MS = 300;
  * lower-integrity process (UIPI), and there is no way around it short of elevating the whole app.
  */
 export class WinInserter implements TextInserter {
+  /** What the last paste put in, for a snippet's swap. */
+  private lastPasted = "";
+
   constructor(private readonly deps: InserterDeps = {}) {}
+
+  /**
+   * Takes back the paste just made (Ctrl+Z in the app it went to) and puts `text` in its place: a
+   * snippet the person chose after the words went in as said. Only where the cursor can be read and
+   * Ctrl+Z moved it back by exactly what was pasted: in an app where Ctrl+Z does nothing (a terminal)
+   * the snippet would go in beside the words, and where it took back more than the paste, the
+   * person's own typing (then Ctrl+Y puts it back). Otherwise false, and nothing is changed.
+   * Ported from the Mac's Inserter.replaceLast (c8eec41).
+   */
+  async replaceLast(text: string): Promise<boolean> {
+    const pasted = this.lastPasted.length;
+    const before = pasted > 0 ? await this.deps.caret?.().catch(() => null) : null;
+    if (before === null || before === undefined) return false;
+    await waitForModifiersUp();
+    if (!sendChord([VK.control], VK.z)) return false;
+    await new Promise((resolve) => setTimeout(resolve, this.deps.undoMs ?? UNDO_MS));
+    const after = await this.deps.caret?.().catch(() => null);
+    if (after === null || after === undefined || before - after !== pasted) {
+      if (after !== null && after !== undefined && after !== before) sendChord([VK.control], VK.y);
+      return false;
+    }
+    return (await this.insert(text)) === "pasted";
+  }
 
   prepare(): void {
     this.deps.warm?.();
@@ -65,6 +98,7 @@ export class WinInserter implements TextInserter {
     }
 
     restoreClipboardLater(previous, text);
+    this.lastPasted = text;
     // Where the box can be read back, the words must be in it; if they never arrive (a box that
     // looked right but took nothing, a window that swallowed the keys), the pill offers Copy.
     return (await this.landed(text)) === false ? "nowhere" : "pasted";

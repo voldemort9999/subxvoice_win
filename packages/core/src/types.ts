@@ -64,5 +64,9 @@ export interface SessionRecord {
    * The words are never lost, but the user is told why they are in the wrong script.
    */
   rewriteError?: string;
+  /** The snippet whose text went in for what was said (Mac e6315c8). */
+  snippet?: string;
+  /** What was said, when a snippet's text went in instead. */
+  saidText?: string;
   timings: Timings;
 }

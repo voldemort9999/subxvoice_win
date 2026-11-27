@@ -55,6 +55,7 @@ import { createPlatform } from "./platform";
 import { apiUrl, clientHeaders, createStt, devToken, loadDevEnv } from "./providers";
 import { deleteRecording, recordingsDir, saveRecording, setRecordingsDir } from "./recordings";
 import { loadPage, PRELOAD_PATH } from "./renderer";
+import { SnippetStore } from "./snippets";
 import { addStarterWords, fixCapitalNames } from "./starter-words";
 import { JsonDictionaryStore, JsonFile, JsonSettingsStore } from "./stores";
 import { createTray } from "./tray";
@@ -349,6 +350,31 @@ function notifyHistoryChanged(): void {
   mainWindow?.webContents.send(IPC.historyChanged);
 }
 
+function notifySnippetsChanged(): void {
+  mainWindow?.webContents.send(IPC.snippetsChanged);
+}
+
+/** How long the pill's offer of a snippet stands (the Mac's 15 s). */
+const SNIPPET_OFFER_MS = 15_000;
+/** The snippet offered on the pill now, if any. */
+let snippetOffer: {
+  snippetId: string;
+  trigger: string;
+  replaced: string;
+  recordId: string;
+  at: number;
+  stop: () => void;
+} | null = null;
+
+/** A snippet from the renderer, checked before it is stored. */
+function assertSnippet(value: unknown): { id?: string; triggers: string[]; text: string } {
+  const item = value as { id?: unknown; triggers?: unknown; text?: unknown };
+  if (!item || typeof item !== "object" || typeof item.text !== "string" || !Array.isArray(item.triggers))
+    throw new Error("That snippet could not be read.");
+  const triggers = item.triggers.filter((said): said is string => typeof said === "string").slice(0, 20);
+  return { ...(typeof item.id === "string" ? { id: item.id } : {}), triggers, text: item.text };
+}
+
 /** Credentials arrive from the renderer, so they are checked before they reach the network. */
 function asText(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim() || value.length > 320) {
@@ -460,6 +486,7 @@ async function start(): Promise<void> {
     totals,
   );
   const dictionary = new JsonDictionaryStore(() => join(accountDir, "dictionary.json"));
+  const snippets = new SnippetStore(() => join(accountDir, "snippets.json"));
 
   const switchAccountData = async (userId: string | null) => {
     // The account being left was signed in here until now: its 30 days start today. (Not the
@@ -473,6 +500,8 @@ async function start(): Promise<void> {
     setRecordingsDir(join(accountDir, "recordings"));
     history.forget();
     dictionary.forget();
+    snippets.forget();
+    snippetOffer = null;
     voice.forget();
     learner.forget();
     // Built now, in the background, so the first dictation does not wait for it.
@@ -772,6 +801,16 @@ async function start(): Promise<void> {
   void pruneHistory();
   setInterval(() => void pruneHistory(), 60 * 60 * 1000);
 
+  handle(IPC.snippetsList, () => snippets.list());
+  handle(IPC.snippetsSave, async (_event, item: unknown) => {
+    const saved = await snippets.save(assertSnippet(item));
+    notifySnippetsChanged();
+    return saved;
+  });
+  handle(IPC.snippetsRemove, async (_event, id: unknown) => {
+    if (typeof id === "string") await snippets.remove(id);
+    notifySnippetsChanged();
+  });
   handle(IPC.dictionaryList, () => dictionary.all());
   handle(IPC.dictionaryUpsert, async (_event, entry: unknown) => {
     await dictionary.upsert(assertDictionaryEntry(entry));
@@ -838,6 +877,9 @@ async function start(): Promise<void> {
       },
       onHistoryChanged: notifyHistoryChanged,
       onPasted: (text, app) => void learner.pasted(text, app),
+      snippets: () => snippets.usable(),
+      onSnippetUsed: (id) => void snippets.used(id).then(notifySnippetsChanged),
+      onSnippetOffer: (offer) => offerSnippet(offer),
       log: (line) => console.log(line),
     }),
     {
@@ -991,6 +1033,10 @@ async function start(): Promise<void> {
     const kind = pill.currentKind();
     if (kind === "learned") await undoLearned();
     else if (kind === "unplaced") await copyUnplaced();
+    else if (kind === "snippet") {
+      dictation.dismiss();
+      await takeOfferedSnippet();
+    }
     // "No sound from your microphone": the microphone and its live level are in Settings, General.
     else if (pill.showsMicCheck()) openMainWindow({ page: "settings", tab: "general" });
     else openMainWindow();
@@ -1025,6 +1071,64 @@ async function start(): Promise<void> {
     if (pill.owns(event.sender) || !isDemoState(state)) return;
     dictation.demo(state);
   });
+
+  /**
+   * A trigger said inside a sentence: the words went in as said, and the pill offers the snippet
+   * for 15 s (Mac e6315c8). Typing meanwhile withdraws it, since Ctrl+Z would then take back the
+   * person's typing, not our words; our own Ctrl+V can still be heard for the first half second.
+   */
+  function offerSnippet(offer: {
+    snippetId: string;
+    trigger: string;
+    replaced: string;
+    recordId: string;
+  }): void {
+    withdrawSnippet();
+    const at = Date.now();
+    const stopWatching = platform.hotkey.onTyped?.(() => {
+      if (Date.now() - at < 500 || snippetOffer?.at !== at) return;
+      withdrawSnippet();
+      if (pill.currentKind() === "snippet") dictation.dismiss();
+    });
+    const expiry = setTimeout(withdrawSnippet, SNIPPET_OFFER_MS);
+    snippetOffer = { ...offer, at, stop: () => (clearTimeout(expiry), stopWatching?.()) };
+    dictation.notice({ kind: "snippet", trigger: offer.trigger });
+  }
+
+  function withdrawSnippet(): void {
+    snippetOffer?.stop();
+    snippetOffer = null;
+  }
+
+  /** The pill's Use: the words that went in are taken back and the snippet's version goes in. */
+  async function takeOfferedSnippet(): Promise<void> {
+    const offer = snippetOffer;
+    withdrawSnippet();
+    if (!offer || Date.now() - offer.at > SNIPPET_OFFER_MS) return;
+    // What the box says now is about to change on purpose: not a fix to learn from.
+    learner.forget();
+    try {
+      // Where the words could not be swapped safely, the snippet's own text is copied instead.
+      if (!(await platform.inserter.replaceLast?.(offer.replaced))) {
+        const text = await snippets.text(offer.snippetId);
+        if (text) await clipboard.writeText(text);
+        dictation.confirm(`Snippet copied · paste with ${process.platform === "darwin" ? "⌘V" : "Ctrl+V"}`);
+        console.log("snippet: could not swap safely here; its text was copied");
+        return;
+      }
+      await snippets.used(offer.snippetId);
+      notifySnippetsChanged();
+      const marked = await history.update(offer.recordId, (record) => {
+        record.saidText = record.finalText;
+        record.finalText = offer.replaced;
+        record.snippet = offer.snippetId;
+      });
+      if (marked) notifyHistoryChanged();
+      console.log("snippet: swapped in after the paste");
+    } catch (error) {
+      dictation.confirm(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   async function copyUnplaced(): Promise<void> {
     const text = pill.unplacedText();

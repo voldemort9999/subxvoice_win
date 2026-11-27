@@ -9,6 +9,7 @@ import type {
   DayTotal,
   MicrophoneOption,
   PermissionStatus,
+  SnippetItem,
   UpdateState,
   Usage,
   VoiceSettings,
@@ -24,6 +25,17 @@ export function useHistory(): SessionRecord[] | null {
     return window.subx.history.onChanged(load);
   }, []);
   return records;
+}
+
+/** The person's snippets, newest change first; read again when one is added, changed or used. */
+export function useSnippets(): SnippetItem[] | null {
+  const [items, setItems] = useState<SnippetItem[] | null>(null);
+  useEffect(() => {
+    const load = () => void window.subx.snippets.list().then(setItems);
+    load();
+    return window.subx.snippets.onChanged(load);
+  }, []);
+  return items;
 }
 
 /** The daily totals (words, speaking time, dictations per day), re-read whenever the history changes. */

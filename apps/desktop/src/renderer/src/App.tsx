@@ -7,6 +7,7 @@ import { InsightsPage } from "./pages/InsightsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPanel } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
+import { SnippetsActions, SnippetsPage } from "./pages/SnippetsPage";
 import { stopPlaying } from "./shared/AudioButton";
 import { Contours } from "./shared/effects/Contours";
 import { useAccount, useAppInfo, useBilling, useUsage } from "./shared/hooks";
@@ -18,11 +19,12 @@ const TITLES: Record<PageId, string> = {
   dashboard: "Home",
   insights: "Insights",
   dictionary: "Dictionary",
+  snippets: "Snippets",
   settings: "Settings",
 };
 
 /** The pages, in the sidebar's order; Settings is a panel over Home, never one of them. */
-const PAGES: PageId[] = ["dashboard", "dictionary", "insights"];
+const PAGES: PageId[] = ["dashboard", "dictionary", "snippets", "insights"];
 
 export function App() {
   const [page, setPage] = useState<PageId>("dashboard");
@@ -126,6 +128,7 @@ export function App() {
               <>
                 <h1 className="text-[24px] leading-none">{TITLES[shown]}</h1>
                 {shown === "dictionary" && <DictionaryActions />}
+                {shown === "snippets" && <SnippetsActions />}
               </>
             )}
           </header>
@@ -145,6 +148,7 @@ export function App() {
                   {id === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
                   {id === "insights" && <InsightsPage hotkey={hotkey} />}
                   {id === "dictionary" && <DictionaryPage />}
+                  {id === "snippets" && <SnippetsPage />}
                 </div>
               </main>
             ))}

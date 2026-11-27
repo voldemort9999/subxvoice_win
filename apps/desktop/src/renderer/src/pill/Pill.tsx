@@ -122,7 +122,9 @@ export function Pill() {
             ? "Undo: remove from dictionary"
             : state.kind === "unplaced"
               ? "Copy what you said"
-              : "Open SUBXVoice"
+              : state.kind === "snippet"
+                ? `Use the snippet for "${state.trigger}"`
+                : "Open SUBXVoice"
         }
         // Room around the idle bar, so the pointer finds it without pixel-hunting.
         className="flex min-h-6 items-center justify-center px-2 py-1"

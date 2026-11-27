@@ -10,6 +10,7 @@ function build(opts: {
   context?: { appName?: string; appId?: string };
   signedIn?: boolean;
   account?: () => string;
+  extra?: Partial<WorkflowDeps>;
 }) {
   const inserter = new FakeInserter();
   const history = new MemoryHistory();
@@ -41,7 +42,7 @@ function build(opts: {
 
   const pasted: string[] = [];
   deps.onPasted = (text) => pasted.push(text);
-  return { workflow: createWorkflow(deps), inserter, history, saved, heard, pasted };
+  return { workflow: createWorkflow({ ...deps, ...opts.extra }), inserter, history, saved, heard, pasted };
 }
 
 describe("createWorkflow", () => {
@@ -161,5 +162,29 @@ describe("createWorkflow", () => {
     await Promise.resolve();
 
     expect(inserter.inserted).toEqual([]);
+  });
+
+  it("types a snippet said on its own and offers one said inside a sentence, learning from neither", async () => {
+    const snippets = async () => [{ id: "e", triggers: ["my email"], text: "me@example.com" }];
+    const used: string[] = [];
+    const offers: string[] = [];
+    const whole = build({ spoken: "My email.", extra: { snippets, onSnippetUsed: (id) => used.push(id) } });
+    const one = await whole.workflow.open("exact");
+    one.push(clip.samples);
+    await one.finish(clip);
+    expect(whole.inserter.inserted).toEqual(["me@example.com"]);
+    expect(used).toEqual(["e"]);
+    expect(whole.pasted).toEqual([]);
+
+    const inside = build({
+      spoken: "Send it to my email.",
+      extra: { snippets, onSnippetOffer: (offer) => offers.push(offer.replaced) },
+    });
+    const two = await inside.workflow.open("exact");
+    two.push(clip.samples);
+    await two.finish(clip);
+    expect(inside.inserter.inserted).toEqual(["Send it to my email."]);
+    expect(offers).toEqual(["Send it to me@example.com."]);
+    expect(inside.pasted).toEqual(["Send it to my email."]);
   });
 });

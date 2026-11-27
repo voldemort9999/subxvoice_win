@@ -9,4 +9,12 @@ export {
   type ProcessOptions,
 } from "./pipeline";
 export { applyDictionary } from "./rules";
+export {
+  plain,
+  type Snippet,
+  type SnippetInside,
+  snippetFrom,
+  snippetInside,
+  wholeSnippet,
+} from "./snippets";
 export type * from "./types";

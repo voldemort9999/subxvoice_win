@@ -75,6 +75,12 @@ const api: SubxApi = {
     thisDevice: () => ipcRenderer.invoke(IPC.statsThisDevice),
     onChanged: (listener) => subscribe(IPC.statsChanged, listener),
   },
+  snippets: {
+    list: () => ipcRenderer.invoke(IPC.snippetsList),
+    save: (item) => ipcRenderer.invoke(IPC.snippetsSave, item),
+    remove: (id) => ipcRenderer.invoke(IPC.snippetsRemove, id),
+    onChanged: (listener) => subscribe(IPC.snippetsChanged, listener),
+  },
   dictionary: {
     list: () => ipcRenderer.invoke(IPC.dictionaryList),
     onChanged: (listener) => subscribe(IPC.dictionaryChanged, listener),

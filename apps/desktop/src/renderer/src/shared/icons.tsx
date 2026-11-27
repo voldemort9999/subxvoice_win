@@ -197,3 +197,47 @@ export const InfoIcon = ({ className }: IconProps) => (
     <path d="M12 11v6M12 7.5v0" />
   </Icon>
 );
+
+/** Two braces around nothing: text that stands in for more (the Mac's snippet). */
+export const SnippetIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M8 4c-2 0-3 1-3 3v2c0 1.5-1 3-2 3 1 0 2 1.5 2 3v2c0 2 1 3 3 3" />
+    <path d="M16 4c2 0 3 1 3 3v2c0 1.5 1 3 2 3-1 0-2 1.5-2 3v2c0 2-1 3-3 3" />
+  </Icon>
+);
+
+/** A page of a calendar, its two rings on top. */
+export const CalendarIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+    <path d="M3 10h18" />
+    <path d="M8 3v4" />
+    <path d="M16 3v4" />
+  </Icon>
+);
+
+/** Lines of a script, the last one short. */
+export const ScriptIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M4 6h16" />
+    <path d="M4 10.5h16" />
+    <path d="M4 15h16" />
+    <path d="M4 19.5h9" />
+  </Icon>
+);
+
+/** A pushpin: what stays at the top. */
+export const PinIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M9 3h6" />
+    <path d="M10 3v6l-3 4h10l-3-4V3" />
+    <path d="M12 13v8" />
+  </Icon>
+);
+
+export const PlusIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </Icon>
+);

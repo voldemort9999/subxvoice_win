@@ -49,6 +49,11 @@ export const IPC = {
   statsChanged: "stats:changed",
   /** Words arrived from another device: the dictionary page reads its list again. */
   dictionaryChanged: "dictionary:changed",
+  snippetsList: "snippets:list",
+  snippetsSave: "snippets:save",
+  snippetsRemove: "snippets:remove",
+  /** A snippet was added, changed, removed or used: its page reads them again. */
+  snippetsChanged: "snippets:changed",
   accountDevices: "account:devices",
   historyAudio: "history:audio",
   historyRemove: "history:remove",
@@ -134,6 +139,17 @@ export interface AppLook {
   name: string;
   /** A data: URL of the app's icon, "" when it has none. */
   icon: string;
+}
+
+/** A snippet as kept (snippets.json): what is said, what goes in, how often it went in. */
+export interface SnippetItem {
+  id: string;
+  triggers: string[];
+  text: string;
+  uses?: number;
+  lastUsedAt?: number;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface DayTotal {
@@ -380,7 +396,12 @@ export type PillState =
   /** Words just learned from the user's own fixes; clicking the pill takes them back out. */
   | { kind: "learned"; words: string[] }
   /** No text box had the focus, so nothing was typed; clicking the pill copies `text`. */
-  | { kind: "unplaced"; text: string };
+  | { kind: "unplaced"; text: string }
+  /**
+   * A snippet's trigger was said inside a sentence and the words went in as said; clicking the pill
+   * puts the snippet's text in their place instead. `trigger` as said (Mac e6315c8).
+   */
+  | { kind: "snippet"; trigger: string };
 
 export type MicCommand = "start" | "stop";
 
@@ -526,6 +547,13 @@ export interface SubxApi {
     /** This PC's own counts by day (the Mac's stats:thisMac). */
     thisDevice(): Promise<Record<string, DayTotal>>;
     /** The totals or the allowance changed; read them again (no network: they are kept here). */
+    onChanged(listener: () => void): () => void;
+  };
+  snippets: {
+    list(): Promise<SnippetItem[]>;
+    /** Refused with a sentence to show: too long, or words another snippet uses. */
+    save(item: { id?: string; triggers: string[]; text: string }): Promise<SnippetItem>;
+    remove(id: string): Promise<void>;
     onChanged(listener: () => void): () => void;
   };
   dictionary: {

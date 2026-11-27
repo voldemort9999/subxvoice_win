@@ -79,6 +79,8 @@ export const VK = {
   lctrl: 0xa2,
   rctrl: 0xa3,
   v: 0x56,
+  y: 0x59,
+  z: 0x5a,
 } as const;
 
 const KEYEVENTF_KEYUP = 2;

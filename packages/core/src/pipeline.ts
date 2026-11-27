@@ -2,6 +2,7 @@ import type { TextInserter } from "./contracts/platform";
 import type { DictionaryStore, HistoryStore } from "./contracts/store";
 import type { SttProvider, Transcript } from "./contracts/stt";
 import { applyDictionary } from "./rules";
+import { type Snippet, type SnippetInside, snippetInside, wholeSnippet } from "./snippets";
 import type { AppContext, AudioClip, Mode, SessionRecord } from "./types";
 
 export interface PipelineDeps {
@@ -17,7 +18,15 @@ export type Outcome =
    * `pasteError`: the text could not be typed (the dictation is still saved to history).
    * `nowhere`: nothing that takes text had the focus, so nothing was typed.
    */
-  { kind: "inserted"; record: SessionRecord; pasteError?: string; nowhere?: true } | { kind: "empty" };
+  | {
+      kind: "inserted";
+      record: SessionRecord;
+      pasteError?: string;
+      nowhere?: true;
+      /** A trigger was said among other words: they went in as said, and this is offered instead. */
+      offer?: SnippetInside;
+    }
+  | { kind: "empty" };
 
 export interface ProcessOptions {
   /** The finished words, as soon as they are known, before they are pasted. */
@@ -30,6 +39,8 @@ export interface ProcessOptions {
    * key going down and the text coming back, so one person's words never land in another's history.
    */
   keep?: () => boolean;
+  /** The person's snippets: the whole dictation one of them, and its text goes in instead. */
+  snippets?: () => Snippet[];
 }
 
 /**
@@ -127,7 +138,13 @@ export class Pipeline {
   ): Promise<Outcome> {
     const clock = stopwatch();
     // Spacing is left alone: the server's line breaks (lists, emails) are part of the text.
-    const text = applyDictionary(transcript.text, dictionary).trim();
+    const said = applyDictionary(transcript.text, dictionary).trim();
+    // The person's snippets, on this computer: the whole dictation a trigger, and its text goes in
+    // at once; a trigger among other words, and it is only offered after the paste (Mac e6315c8).
+    const snippets = said ? (options.snippets?.() ?? []) : [];
+    const used = wholeSnippet(said, snippets);
+    const offer = used ? null : snippetInside(said, snippets);
+    const text = used ? used.text : said;
     const rulesMs = clock.lap();
     if (!text) return { kind: "empty" };
     options.onTranscript?.(text);
@@ -150,11 +167,13 @@ export class Pipeline {
       rawText: transcript.raw ?? transcript.text,
       finalText: text,
       ...(transcript.rewriteError ? { rewriteError: transcript.rewriteError } : {}),
+      ...(used ? { snippet: used.id, saidText: said } : {}),
       timings: { sttMs, rulesMs, insertMs, totalMs: sttMs + clock.total() },
     };
     if (options.keep?.() !== false) await this.deps.history.save(record);
     if (pasteError) return { kind: "inserted", record, pasteError };
-    return nowhere ? { kind: "inserted", record, nowhere: true } : { kind: "inserted", record };
+    if (nowhere) return { kind: "inserted", record, nowhere: true };
+    return offer ? { kind: "inserted", record, offer } : { kind: "inserted", record };
   }
 }
 

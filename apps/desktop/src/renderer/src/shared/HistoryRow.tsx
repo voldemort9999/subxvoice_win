@@ -43,6 +43,7 @@ export function HistoryRow({ record, first = false }: { record: SessionRecord; f
             {record.rewriteError && (
               <span className="truncate font-medium text-accent-ink">Not cleaned up</span>
             )}
+            {record.snippet && <span className="truncate font-medium text-accent-ink">Snippet</span>}
           </p>
         </div>
 
@@ -61,6 +62,12 @@ export function HistoryRow({ record, first = false }: { record: SessionRecord; f
 function RowMenu({ record }: { record: SessionRecord }) {
   const name = `subxvoice-${new Date(record.createdAt).toISOString().slice(0, 16).replace(/[T:]/g, "-")}`;
   const items: MoreItem[] = [];
+  // A snippet went in: the words as they were said are still one click away (Mac e6315c8).
+  if (record.saidText)
+    items.push({
+      label: "Copy what you said",
+      onClick: () => void navigator.clipboard.writeText(record.saidText ?? ""),
+    });
   if (record.audioPath)
     items.push({
       label: "Download recording",

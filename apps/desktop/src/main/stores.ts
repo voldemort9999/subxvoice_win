@@ -98,6 +98,16 @@ export class JsonHistoryStore implements HistoryStore {
     await this.file.write(records);
   }
 
+  /** Changes one record in place (a snippet swapped in after the paste); false when it is gone. */
+  async update(id: string, change: (record: SessionRecord) => void): Promise<boolean> {
+    const records = await this.load();
+    const record = records.find((item) => item.id === id);
+    if (!record) return false;
+    change(record);
+    await this.file.write(records);
+    return true;
+  }
+
   private async load(): Promise<SessionRecord[]> {
     this.records ??= await this.file.read();
     return this.records;

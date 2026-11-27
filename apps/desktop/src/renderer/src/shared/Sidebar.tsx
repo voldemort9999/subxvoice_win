@@ -2,11 +2,11 @@ import { SidebarTop } from "@platform/Chrome";
 import type { ComponentType } from "react";
 import type { AccountState, Billing, Usage } from "../../../shared/ipc";
 import { formatSpan } from "./format";
-import { BookIcon, ChartIcon, GearIcon, HomeIcon } from "./icons";
+import { BookIcon, ChartIcon, GearIcon, HomeIcon, SnippetIcon } from "./icons";
 import { Mark } from "./Mark";
 import { ProfileMenu } from "./ProfileMenu";
 
-export type PageId = "dashboard" | "insights" | "dictionary" | "settings";
+export type PageId = "dashboard" | "insights" | "dictionary" | "snippets" | "settings";
 
 interface NavItem {
   id: PageId;
@@ -22,6 +22,7 @@ interface NavItem {
 const PAGES: NavItem[] = [
   { id: "dashboard", label: "Home", icon: HomeIcon },
   { id: "dictionary", label: "Dictionary", icon: BookIcon },
+  { id: "snippets", label: "Snippets", icon: SnippetIcon },
   { id: "insights", label: "Insights", icon: ChartIcon },
 ];
 

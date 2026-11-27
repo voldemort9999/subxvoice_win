@@ -361,7 +361,8 @@ export class DictationController {
     clearTimeout(this.resetTimer);
     this.pill.setState(state, demo);
     // Heard as well as seen: these wait for the user to act, and the pill may be out of view.
-    if (state.kind === "learned" || state.kind === "unplaced") this.hooks.alert?.();
+    if (state.kind === "learned" || state.kind === "unplaced" || state.kind === "snippet")
+      this.hooks.alert?.();
     this.resetTimer = setTimeout(() => {
       this.resetTimer = undefined;
       if (this.state !== "idle") return;

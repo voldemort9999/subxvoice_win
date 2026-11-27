@@ -7,7 +7,15 @@
 // The controller above it only knows about the hotkey, the pill and the microphone; the pipeline
 // below it only knows about plug-point interfaces. Everything app-specific — which settings apply,
 // what the pill says, where the audio file goes, what a failure reads like — lives here.
-import type { AppContext, AudioClip, ContextReader, Mode, Pipeline, SessionRecord } from "@subx/core";
+import type {
+  AppContext,
+  AudioClip,
+  ContextReader,
+  Mode,
+  Pipeline,
+  SessionRecord,
+  Snippet,
+} from "@subx/core";
 import type { Usage } from "../shared/ipc";
 import type { DictationEngine, DictationRun } from "./dictation";
 
@@ -38,6 +46,15 @@ export interface WorkflowDeps {
    * Asked for only when opening fails: the happy path must not pay for a round trip it does not need.
    */
   allowanceProblem?(): Promise<string | null>;
+  /** The person's snippets, read at key-down (the whole dictation one of them: its text goes in). */
+  snippets?(): Promise<Snippet[]>;
+  /** A snippet's text went in for what was said: counted for its page. */
+  onSnippetUsed?(id: string): void;
+  /**
+   * A trigger was said among other words: they went in as said, and the pill offers the snippet
+   * (`replaced`: the dictation with its text swapped in, for the swap; `recordId` to mark it).
+   */
+  onSnippetOffer?(offer: { snippetId: string; trigger: string; replaced: string; recordId: string }): void;
   log?(line: string): void;
 }
 
@@ -64,9 +81,12 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
 
       // Opening here, on key-press, is what keeps release→paste short: the socket is already
       // warm and the words are recognised while the user is still speaking.
+      // Read now, while the socket opens, so the end of the dictation does not wait for the file.
+      const snippets = (await deps.snippets?.().catch(() => [])) ?? [];
       let session: Awaited<ReturnType<Pipeline["open"]>>;
       try {
         session = await deps.pipeline.open(mode, context, {
+          snippets: () => snippets,
           onTranscript: deps.onHeard,
           ...(deps.onPartial ? { onPartial: deps.onPartial } : {}),
           keep: sameAccount,
@@ -103,7 +123,16 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
           if (outcome.pasteError) throw new Error(outcome.pasteError);
           // Not pasted anywhere, so there is no field to learn from.
           if (outcome.nowhere) return { text: record.finalText, nowhere: true };
-          deps.onPasted?.(record.finalText, record.context.appName);
+          // A snippet's own text is not the person's words: nothing to learn from fixes to it.
+          if (record.snippet) deps.onSnippetUsed?.(record.snippet);
+          else deps.onPasted?.(record.finalText, record.context.appName);
+          if (outcome.offer)
+            deps.onSnippetOffer?.({
+              snippetId: outcome.offer.snippet.id,
+              trigger: outcome.offer.trigger,
+              replaced: outcome.offer.text,
+              recordId: record.id,
+            });
           return { text: record.finalText, warning: record.rewriteError };
         },
         // Not finish(): that would type and record what was said, which is what cancel undoes.

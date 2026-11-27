@@ -5,7 +5,7 @@ const chords: number[][] = [];
 vi.mock("electron", () => ({ clipboard: { writeText: async (text: string) => void written.push(text) } }));
 vi.mock("./clipboard", () => ({ snapshotClipboard: async () => null, restoreClipboardLater: () => {} }));
 vi.mock("./win32", () => ({
-  VK: { control: 0x11, v: 0x56 },
+  VK: { control: 0x11, v: 0x56, y: 0x59, z: 0x5a },
   waitForModifiersUp: async () => true,
   sendChord: (modifiers: number[], vk: number) => {
     chords.push([...modifiers, vk]);
@@ -93,5 +93,62 @@ describe("WinInserter: pasting only where text can go", () => {
     const warm = vi.fn();
     new WinInserter({ focusTakesText: async () => true, warm }).prepare();
     expect(warm).toHaveBeenCalledOnce();
+  });
+});
+
+// A snippet chosen on the pill after the words went in as said (Mac c8eec41): swapped only where the
+// undo took back exactly the paste; anywhere else nothing changes and the caller copies it instead.
+describe("WinInserter.replaceLast", () => {
+  beforeEach(() => {
+    written.length = 0;
+    chords.length = 0;
+  });
+
+  function withCaret(places: (number | null)[]) {
+    const inserter = new WinInserter({
+      focusTakesText: async () => true,
+      caret: async () => places.shift() ?? null,
+      undoMs: 0,
+    });
+    return inserter;
+  }
+
+  it("takes the paste back and puts the snippet in its place", async () => {
+    const inserter = withCaret([20, 10]);
+    await inserter.insert("my email.!");
+    chords.length = 0;
+    expect(await inserter.replaceLast("me@example.com")).toBe(true);
+    expect(chords).toEqual([
+      [0x11, 0x5a],
+      [0x11, 0x56],
+    ]);
+    expect(written.at(-1)).toBe("me@example.com");
+  });
+
+  it("changes nothing where the cursor cannot be read", async () => {
+    const inserter = withCaret([null]);
+    await inserter.insert("my email");
+    chords.length = 0;
+    expect(await inserter.replaceLast("x")).toBe(false);
+    expect(chords).toEqual([]);
+  });
+
+  it("puts back what the undo took when it took more than the paste", async () => {
+    const inserter = withCaret([20, 5]);
+    await inserter.insert("my email.!");
+    chords.length = 0;
+    expect(await inserter.replaceLast("x")).toBe(false);
+    expect(chords).toEqual([
+      [0x11, 0x5a],
+      [0x11, 0x59],
+    ]);
+  });
+
+  it("leaves it where the undo did nothing (a terminal)", async () => {
+    const inserter = withCaret([20, 20]);
+    await inserter.insert("my email.!");
+    chords.length = 0;
+    expect(await inserter.replaceLast("x")).toBe(false);
+    expect(chords).toEqual([[0x11, 0x5a]]);
   });
 });

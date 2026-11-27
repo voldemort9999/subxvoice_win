@@ -24,6 +24,7 @@ export function createWinPlatform(): Platform {
       warm: () => system.warm(),
       // Read back after pasting: where the box can be read, the words must be in it.
       readField: () => system.focusedText(),
+      caret: () => system.caretOffset(),
     }),
     permissions: new WinPermissions(),
     context: new WinContextReader((path) => system.fileDescription(path)),

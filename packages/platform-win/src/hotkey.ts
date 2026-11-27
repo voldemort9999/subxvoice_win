@@ -192,6 +192,31 @@ export function parseBinding(keys: string): number[][] {
  */
 const VK_ESCAPE = 0x1b;
 
+/**
+ * The keys that write: letters, digits, space, the punctuation keys and the number pad (the Mac's
+ * KeyWatcher.typing: not Return, Tab, Backspace, arrows or function keys).
+ */
+const WRITING = [
+  0x20,
+  ...Array.from({ length: 10 }, (_, i) => 0x30 + i),
+  ...Array.from({ length: 26 }, (_, i) => 0x41 + i),
+  ...Array.from({ length: 16 }, (_, i) => 0x60 + i),
+  0xba,
+  0xbb,
+  0xbc,
+  0xbd,
+  0xbe,
+  0xbf,
+  0xc0,
+  0xdb,
+  0xdc,
+  0xdd,
+  0xde,
+  0xe2,
+];
+/** Every third poll (45 ms): a key is held for longer than that while typing, and it costs a third. */
+const TYPING_EVERY = 3;
+
 export class WinHotkey implements Hotkey {
   private timer: NodeJS.Timeout | null = null;
   private bindings: { groups: number[][]; own: Set<number>; mode: Mode }[] = [];
@@ -200,6 +225,9 @@ export class WinHotkey implements Hotkey {
   private escape = false;
   private escapeDown = false;
   private readonly down: (vk: number) => boolean;
+  private readonly typed = new Set<() => void>();
+  private readonly writingDown = new Set<number>();
+  private polls = 0;
 
   /** `down` is injectable so the state machine can be tested without a keyboard. */
   constructor(down: (vk: number) => boolean = isKeyDown) {
@@ -295,8 +323,35 @@ export class WinHotkey implements Hotkey {
     return { done, cancel: () => end(null), tick };
   }
 
+  onTyped(listener: () => void): () => void {
+    this.typed.add(listener);
+    return () => {
+      this.typed.delete(listener);
+      if (this.typed.size === 0) this.writingDown.clear();
+    };
+  }
+
+  /**
+   * That a key that writes went down, never which: only while someone listens, and not while the
+   * hotkey is held or a shortcut's Ctrl or Win is (AltGr, which is Ctrl + Right Alt, writes).
+   */
+  private watchTyping(): void {
+    const chord = this.down(VK.lwin) || this.down(VK.rwin) || (this.down(VK.control) && !this.down(0xa5));
+    let pressed = false;
+    for (const vk of WRITING) {
+      if (!this.down(vk)) this.writingDown.delete(vk);
+      else if (!this.writingDown.has(vk)) {
+        this.writingDown.add(vk);
+        pressed = true;
+      }
+    }
+    if (pressed && !chord && this.held === null) for (const listener of this.typed) listener();
+  }
+
   /** One poll. Exposed for tests; the interval calls it. */
   tick(onEvent: (event: HotkeyEvent) => void): void {
+    this.polls += 1;
+    if (this.typed.size > 0 && this.polls % TYPING_EVERY === 0) this.watchTyping();
     if (this.escape) {
       const down = this.down(VK_ESCAPE);
       if (down && !this.escapeDown) onEvent({ type: "cancel", key: VK_ESCAPE });
