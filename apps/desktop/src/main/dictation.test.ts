@@ -184,4 +184,25 @@ describe("DictationController", () => {
     expect(run.cancelled).toBe(true);
     expect(run.finished).toBe(false);
   });
+
+  // User, 2026-11-27: Show on screen runs for two or three seconds, then the pill is at rest again.
+  it("shows a demo from Settings for a moment, then rests", () => {
+    vi.useFakeTimers();
+    try {
+      const states: PillState[] = [];
+      const pill = { revive: () => {}, setState: (state: PillState) => states.push(state), level: () => {} };
+      const mic: MicSource = { start: async () => {}, stop: async () => {} };
+      const controller = new DictationController(pill as unknown as PillWindow, mic, {
+        open: async () => fakeRun(""),
+      });
+      controller.demo({ kind: "listening" });
+      expect(states.at(-1)?.kind).toBe("listening");
+      vi.advanceTimersByTime(2000);
+      expect(states.at(-1)?.kind).toBe("listening");
+      vi.advanceTimersByTime(600);
+      expect(states.at(-1)).toEqual({ kind: "idle" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -11,6 +11,8 @@ const DOUBLE_TAP_MS = 400;
 const RESULT_VISIBLE_MS = 1500;
 /** Long enough to read "Added … to dictionary" and reach for Undo. */
 const NOTICE_VISIBLE_MS = 5000;
+/** Settings' Show on screen: long enough to see the state move, then the pill is back at rest (user, 2026-11-27). */
+const DEMO_VISIBLE_MS = 2500;
 /** "No text box · Copy": time to notice, move the mouse there and click (user, 2026-11-21: 15 s). */
 const UNPLACED_VISIBLE_MS = 15_000;
 /**
@@ -154,7 +156,7 @@ export class DictationController {
   /** A made-up state on the real pill, from Settings; never over a dictation. */
   demo(state: PillState): void {
     if (this.state !== "idle") return;
-    this.show(state, NOTICE_VISIBLE_MS, true);
+    this.show(state, DEMO_VISIBLE_MS, true);
   }
 
   /** A short confirmation once the user has acted on the pill (Copy). */
