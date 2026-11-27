@@ -1209,10 +1209,11 @@ async function start(): Promise<void> {
       );
     });
   });
-  listen(IPC.pillDemo, (event, state: unknown) => {
+  listen(IPC.pillDemo, (event, state: unknown, hover: unknown) => {
     // From the main window only, and only the states Settings previews.
     if (pill.owns(event.sender) || !isDemoState(state)) return;
-    dictation.demo(state);
+    // "Pointed at": the idle pill as it looks with the pointer on it, which a state alone cannot say.
+    dictation.demo(hover === true ? ({ ...state, hover: true } as unknown as PillState) : state);
   });
 
   /**
@@ -1448,9 +1449,17 @@ app.on("will-quit", () => {
 function isDemoState(value: unknown): value is PillState {
   const state = value as Partial<PillState> | null;
   if (!state || typeof state.kind !== "string") return false;
-  const texts = Object.values(state).every((field) => typeof field !== "string" || field.length <= 200);
+  // Words short; the app's icon a picture of its own (the Listening preview shows one).
+  const fields = Object.entries(state).every(([key, field]) =>
+    key === "icon"
+      ? typeof field === "string" && field.startsWith("data:image/") && field.length <= 200_000
+      : typeof field !== "string" || field.length <= 200,
+  );
   return (
-    texts && ["idle", "listening", "processing", "done", "error", "learned", "unplaced"].includes(state.kind)
+    fields &&
+    ["idle", "listening", "processing", "done", "error", "learned", "unplaced", "snippet"].includes(
+      state.kind,
+    )
   );
 }
 

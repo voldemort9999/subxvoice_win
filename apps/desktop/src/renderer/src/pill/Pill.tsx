@@ -3,6 +3,7 @@ import { hotkeyLabel } from "../../../shared/hotkey-label";
 import type { PillState } from "../../../shared/ipc";
 import { alignment } from "../../../shared/pill-place";
 import { useAppInfo, useSettings } from "../shared/hooks";
+import { useFakeVoice } from "./fakeVoice";
 import { BAR_COUNT, PillView } from "./PillView";
 import { MicRecorder } from "./recorder";
 
@@ -13,7 +14,7 @@ const ALIGN = { start: "items-start pt-2", center: "items-center", end: "items-e
 
 /** The live pill: state and loudness from the main process, drawn by PillView. */
 export function Pill() {
-  const [state, setState] = useState<PillState>({ kind: "idle" });
+  const [state, setState] = useState<PillState & { demo?: true; hover?: true }>({ kind: "idle" });
   const [hover, setHover] = useState(false);
   const [levels, setLevels] = useState(silence);
   const [startedAt, setStartedAt] = useState(0);
@@ -63,6 +64,10 @@ export function Pill() {
       }),
     [recorder],
   );
+  // Settings' Show on screen: no microphone is on, so the bars move on the previews' made-up voice.
+  const demo = state.demo === true && state.kind === "listening";
+  const fake = useFakeVoice(demo);
+
   // The hands-free timer ticks only while it is shown.
   const ticking = state.kind === "listening" && state.locked === true;
   useEffect(() => {
@@ -131,8 +136,8 @@ export function Pill() {
       >
         <PillView
           state={state}
-          levels={levels}
-          hover={hover}
+          levels={demo ? fake.levels : levels}
+          hover={hover || state.hover === true}
           hotkey={hotkeyLabel(info?.hotkeys[0]?.keys)}
           elapsedMs={Math.max(0, now - startedAt)}
           look={settings?.pillStyle ?? "classic"}

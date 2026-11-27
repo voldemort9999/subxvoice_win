@@ -5,10 +5,11 @@ import { BAR_COUNT } from "./PillView";
  * Loudness from a made-up voice, for the pill previews in Settings: two slow waves and a floor, so
  * the bars, line, orb and rings move like someone talking rather than like a test tone.
  */
-export function useFakeVoice(): { levels: number[]; elapsedMs: number } {
+export function useFakeVoice(on = true): { levels: number[]; elapsedMs: number } {
   const [levels, setLevels] = useState(() => Array<number>(BAR_COUNT).fill(0));
   const [elapsedMs, setElapsed] = useState(4000);
   useEffect(() => {
+    if (!on) return;
     let t = 0;
     const timer = setInterval(() => {
       t += 1;
@@ -17,6 +18,6 @@ export function useFakeVoice(): { levels: number[]; elapsedMs: number } {
       setElapsed((previous) => previous + 80);
     }, 80);
     return () => clearInterval(timer);
-  }, []);
+  }, [on]);
   return { levels, elapsedMs };
 }

@@ -383,7 +383,8 @@ export class PillWindow {
     this.unplaced = state.kind === "unplaced" && !demo ? state.text : "";
     this.micCheck = state.kind === "error" && state.micCheck === true;
     if (this.window.isDestroyed()) return;
-    this.window.webContents.send(IPC.pillState, state);
+    // A demo says so, so the pill moves its bars on a made-up voice (no microphone is on).
+    this.window.webContents.send(IPC.pillState, demo ? { ...state, demo: true } : state);
     if (this.shouldShow()) this.reveal();
     else this.window.hide();
     this.updateArea();

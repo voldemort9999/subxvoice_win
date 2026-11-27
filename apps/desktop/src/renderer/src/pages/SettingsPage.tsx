@@ -960,7 +960,12 @@ otepad.exe`,
             {/* The real pill, wherever it sits, shows this for a few seconds. */}
             <button
               type="button"
-              onClick={() => window.subx.pill.demo(item.state)}
+              onClick={() =>
+                window.subx.pill.demo(
+                  item.state.kind === "listening" && sample ? { ...item.state, icon: sample } : item.state,
+                  item.hover === true,
+                )
+              }
               className="ml-auto shrink-0 rounded-full px-2.5 py-1 text-xs text-[#f2e8c8]/55 transition-colors hover:bg-[#f2e8c8]/10 hover:text-[#f2e8c8] lg:ml-0"
             >
               Show on screen

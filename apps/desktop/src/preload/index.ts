@@ -141,7 +141,7 @@ const api: SubxApi = {
     menu: () => ipcRenderer.send(IPC.pillMenu),
     onHoverReset: (listener) => subscribe(IPC.pillHoverReset, listener),
     area: (rect) => ipcRenderer.send(IPC.pillArea, rect),
-    demo: (state) => ipcRenderer.send(IPC.pillDemo, state),
+    demo: (state, hover) => ipcRenderer.send(IPC.pillDemo, state, hover === true),
     sendChunk: (samples) => ipcRenderer.send(IPC.micChunk, samples),
     micStopped: () => ipcRenderer.send(IPC.micStopped),
     micError: (message) => ipcRenderer.send(IPC.micError, message),

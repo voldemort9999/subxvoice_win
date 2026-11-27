@@ -663,7 +663,8 @@ export interface SubxApi {
   };
   /** Used only by the recording pill window. The mic commands are for the Web Audio fallback. */
   pill: {
-    onState(listener: (state: PillState) => void): () => void;
+    /** `demo`: a made-up state from Settings' Show on screen; `hover` shows it as pointed at. */
+    onState(listener: (state: PillState & { demo?: true; hover?: true }) => void): () => void;
     /** Loudness 0–1 while listening, for the waveform. */
     onLevel(listener: (level: number) => void): () => void;
     onMicCommand(listener: (command: MicCommand) => void): () => void;
@@ -681,7 +682,8 @@ export interface SubxApi {
     /** The pill moved out from under the pointer, so it is no longer hovered. */
     onHoverReset(listener: () => void): () => void;
     /** Shows a made-up state on the real pill for a few seconds (Settings' "show on screen"). */
-    demo(state: PillState): void;
+    /** Shows a made-up state on the real pill for a few seconds, pointed at if `hover`. */
+    demo(state: PillState, hover?: boolean): void;
     /** 16 kHz mono PCM. */
     sendChunk(samples: Int16Array): void;
     /** All audio has been sent after a "stop". */
