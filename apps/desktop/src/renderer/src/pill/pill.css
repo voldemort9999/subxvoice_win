@@ -3,12 +3,12 @@
 /*
  * The pill floats over every other application, light or dark, so it does not follow the
  * window: it is always the soft-black plate of the app mark, with cream on it and the brighter
- * ultramarine for the one thing that is happening now (the darker one is unreadable on black).
+ * blue for the one thing that is happening now (the darker one is unreadable on black).
  */
 @theme {
   --color-soot: #161412;
   --color-cream: #f2e8c8;
-  --color-accent: #5f72ff;
+  --color-accent: #6fa6f0;
   --font-sans: "Geist Variable", "Noto Sans Devanagari Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", "Noto Sans Devanagari Variable", ui-monospace, monospace;
 }

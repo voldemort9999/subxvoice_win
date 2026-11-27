@@ -230,7 +230,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
 
 /**
  * Three styles as a list rather than a dropdown: the example line is the whole point. The chosen
- * one sits on a ultramarine edge — the same mark the typed text gets on the dashboard.
+ * one sits on a blue edge — the same mark the typed text gets on the dashboard.
  */
 function ToneChoice({
   title,

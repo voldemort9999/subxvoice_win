@@ -17,7 +17,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden}
   transform:scale(.6);opacity:0;transition:transform .22s cubic-bezier(.2,.9,.3,1.3),opacity .18s,background .15s,border-color .15s}
 .on .ring{opacity:1;transform:scale(1)}
 .on #veil{opacity:1}
-.ring.hot{transform:scale(1.45);border:3px solid #fff;background:#5f72ff;
+.ring.hot{transform:scale(1.45);border:3px solid #fff;background:#6fa6f0;
   box-shadow:0 0 0 6px rgb(95 114 255/.28),0 0 26px rgb(95 114 255/.7);animation:pulse 1.1s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 12px rgb(124 139 255/.08),0 0 32px rgb(124 139 255/.6)}}
 </style></head><body><div id="veil"></div><script>

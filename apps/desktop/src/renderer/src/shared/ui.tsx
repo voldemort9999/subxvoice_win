@@ -35,7 +35,7 @@ export function Section({
 /**
  * One number with what it means, set as the headline of its column. `note` is for the caveat the
  * number needs — an assumption, or what it is measured against — so the figure is never read as
- * more certain than it is. `mark` gives it a ultramarine rule: only for the figure that is the result.
+ * more certain than it is. `mark` gives it a blue rule: only for the figure that is the result.
  */
 export function Figure({
   label,
@@ -98,7 +98,7 @@ export function Button({
   busy?: boolean;
   className?: string;
 }) {
-  // Both are raised: a button is something you press. Primary is the one ultramarine thing on a
+  // Both are raised: a button is something you press. Primary is the one blue thing on a
   // screen; quiet is cream standing up out of cream.
   const variants = {
     primary: "raised-accent text-on-accent",
@@ -176,7 +176,7 @@ export function CopyButton({ text, label = "Copy text" }: { text: string; label?
   );
 }
 
-/** A row of choices; the chosen one sits on a ultramarine underline, which is what "current" means here. */
+/** A row of choices; the chosen one sits on a blue underline, which is what "current" means here. */
 export function Segmented<T extends string>({
   options,
   value,
@@ -211,7 +211,7 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Text inputs and selects share one look: pressed into the cream, ringed in ultramarine on focus. */
+/** Text inputs and selects share one look: pressed into the cream, ringed in blue on focus. */
 export const FIELD =
   "pressed-in w-full rounded-[10px] px-3 py-2.5 text-ink outline-none placeholder:text-ink-faint focus:ring-2 focus:ring-accent/60";
 
@@ -295,7 +295,7 @@ export function Empty({ children }: { children: ReactNode }) {
 
 /**
  * Something that needs the user: a failure, a missing permission. There is no red in this
- * palette, so it is marked the way the accent is spent everywhere else — a ultramarine edge.
+ * palette, so it is marked the way the accent is spent everywhere else — a blue edge.
  */
 export function Notice({ children, role = "status" }: { children: ReactNode; role?: "status" | "alert" }) {
   return (

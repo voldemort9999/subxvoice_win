@@ -3,7 +3,7 @@ import { clamp01, prefersReducedMotion, themeRgb } from "./noise";
 
 /**
  * The launch and sign-in stage: a field of characters on soft black, out of which a person in
- * profile resolves and speaks: ultramarine rings leave the mouth. In "launch" the name then forms
+ * profile resolves and speaks: blue rings leave the mouth. In "launch" the name then forms
  * beside them, in characters too; in "ambient" (behind sign-in) the person stays, dimmer, and
  * speaks every few seconds, with the name formed under them when `named` (nothing else is there).
  *

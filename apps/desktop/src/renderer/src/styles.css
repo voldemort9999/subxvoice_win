@@ -1,108 +1,67 @@
 @import "tailwindcss";
 
 /*
- * Four themes, each three colours in roughly 60 / 30 / 10 (docs/design.md): the page, the
- * instruments that sit on it (sidebar, the launch stage), and one accent spent only on the voice:
- * what is live, what is chosen, the one thing to press. Butter is the default; the theme is chosen
- * in Settings → Appearance and kept per Mac. Components use the role names, never the hex.
+ * Two themes, Light and Dark, each three colours in roughly 60 / 30 / 10 (docs/design.md): the page,
+ * the instruments on it (sidebar, the launch stage), and one accent spent only on the voice: what is
+ * live, what is chosen, the one thing to press. "Match Windows" (Light or Dark with Windows) is the
+ * default; the choice is made in Settings → Appearance and kept per PC. Components use the role
+ * names, never the hex. The Mac app went from five themes to these two (96d78ad, 2026-11-26): every
+ * new screen had to be checked in each.
  *
- * Each accent has a value for type on the page (--accent-ink, ≥4.5:1) and a lifted one for the
- * inverted surfaces (--side-accent), because no single shade reads on both grounds.
+ * --accent-ink is the accent for type on the page (≥4.5:1), --side-accent the one for the sidebar.
  * --shade is the page's own shadow colour, so emboss and deboss look carved from that material
  * rather than stamped in grey. --stage* is the launch and sign-in stage, drawn on a canvas.
  */
 
-/* Butter — warm and calm: cream rests the eyes, ultramarine reads as trust and clarity. */
-:root,
-:root[data-theme="butter"] {
-  --page: #f2e8c8;
-  --paper: #faf4df;
-  --sunk: #e9ddb8;
-  --raised-top: #fdf9ea;
-  --ink: #161412;
-  --ink-soft: #4a4438;
-  --ink-faint: #6c6453;
-  --accent: #3046e8;
-  --on-accent: #faf4df;
-  --accent-ink: #3046e8;
-  --side: #161412;
-  --side-ink: #f2e8c8;
-  --side-accent: #6b7cff;
-  --shade: 70 56 20;
-  --stage: #161412;
-  --stage-ink: 242 232 200;
-  --stage-accent: 107 124 255;
-  color-scheme: light;
-}
-
 /*
- * Night — low glare for late hours. Charcoal leads and the instruments are one step lighter, not
- * cream: a bright panel beside a dark page was the glare this theme exists to remove. Text is a dim
- * cream rather than near-white, and the blue is softened so it does not buzz on black.
+ * Light — the brand's cream lightened, a warm near-black for text, and one clear blue (hue ~215,
+ * never a violet: the user wants no purple anywhere, 2026-11-26) for what to press, what is on and
+ * where you are. Values from the Mac's Theme.swift (fe92fef, 95172a3).
  */
-:root[data-theme="night"] {
-  --page: #191715;
-  --paper: #22201c;
-  --sunk: #121110;
-  --raised-top: #2e2b26;
-  --ink: #e2d8be;
-  --ink-soft: #bfb69f;
-  --ink-faint: #978e78;
-  --accent: #7c89f5;
-  --on-accent: #121110;
-  --accent-ink: #9aa4fb;
-  --side: #262320;
-  --side-ink: #e2d8be;
-  --side-accent: #9aa4fb;
+:root,
+:root[data-theme="light"] {
+  --page: #fbf8f1;
+  --paper: #fffdf8;
+  --sunk: #f0ebde;
+  --raised-top: #fffdf8;
+  --ink: #1c1b18;
+  --ink-soft: #56524a;
+  --ink-faint: #6e695f;
+  --accent: #1d5aae;
+  --on-accent: #fbf8f1;
+  --accent-ink: #1d5aae;
+  --side: #f3eee2;
+  --side-ink: #1c1b18;
+  --side-accent: #1d5aae;
+  --side-inset: inset 0 1px 2px rgb(60 48 20 / 6%);
+  --shade: 60 48 20;
+  --stage: #1c1b18;
+  --stage-ink: 251 248 241;
+  --stage-accent: 111 166 240;
+  color-scheme: light;
+}
+
+/* Dark — low glare for late hours: warm charcoal, dim warm white, the blue lifted. */
+:root[data-theme="dark"] {
+  --page: #1b1a18;
+  --paper: #23221f;
+  --sunk: #151412;
+  --raised-top: #2b2a27;
+  --ink: #e8e5de;
+  --ink-soft: #b3afa6;
+  --ink-faint: #8e8a81;
+  --accent: #8db8f2;
+  --on-accent: #11161d;
+  --accent-ink: #8db8f2;
+  --side: #24221f;
+  --side-ink: #e8e5de;
+  --side-accent: #8db8f2;
+  --side-inset: inset 0 1px 2px rgb(0 0 0 / 60%);
   --shade: 0 0 0;
-  --stage: #151311;
-  --stage-ink: 239 229 197;
-  --stage-accent: 107 124 255;
+  --stage: #151412;
+  --stage-ink: 236 233 226;
+  --stage-accent: 111 166 240;
   color-scheme: dark;
-}
-
-/* Ink — deep focus: navy steadies attention, a deep teal marks what to act on (Mac c91d412). */
-:root[data-theme="ink"] {
-  --page: #e8ecf3;
-  --paper: #f6f8fb;
-  --sunk: #dbe1eb;
-  --raised-top: #fbfcfe;
-  --ink: #13203a;
-  --ink-soft: #384560;
-  --ink-faint: #5d6981;
-  --accent: #1b7d74;
-  --on-accent: #f6f8fb;
-  --accent-ink: #13706a;
-  --side: #13203a;
-  --side-ink: #e8ecf3;
-  --side-accent: #5ec9bd;
-  --shade: 20 32 58;
-  --stage: #13203a;
-  --stage-ink: 232 236 243;
-  --stage-accent: 94 201 189;
-  color-scheme: light;
-}
-
-/* Plum — creative and warm: plum leans to imagination, a soft rose keeps it gentle (Mac c91d412). */
-:root[data-theme="plum"] {
-  --page: #f3ecf1;
-  --paper: #fbf7fa;
-  --sunk: #e7dce5;
-  --raised-top: #fdfafc;
-  --ink: #2c1830;
-  --ink-soft: #523e58;
-  --ink-faint: #756079;
-  --accent: #a84d78;
-  --on-accent: #fbf7fa;
-  --accent-ink: #933d66;
-  --side: #2c1830;
-  --side-ink: #f3ecf1;
-  --side-accent: #e59cbd;
-  --shade: 60 28 60;
-  --stage: #2c1830;
-  --stage-ink: 243 236 241;
-  --stage-accent: 229 156 189;
-  color-scheme: light;
 }
 
 /*
@@ -144,33 +103,6 @@
   --display-weight: 500;
 }
 
-/*
- * Light — clean and bright, for a well-lit room: white page, a pale grey sidebar that does not
- * invert, and black for the voice (the user's choice: a colour accent read as noise here). The one theme whose instruments are light, so its inset and
- * emboss shadows are a breath rather than a carve.
- */
-:root[data-theme="light"] {
-  --page: #ffffff;
-  --paper: #fafafb;
-  --sunk: #f1f1f4;
-  --raised-top: #ffffff;
-  --ink: #18181b;
-  --ink-soft: #42424c;
-  --ink-faint: #696974;
-  --accent: #3b4fe0;
-  --on-accent: #ffffff;
-  --accent-ink: #3b4fe0;
-  --side: #f3f3f5;
-  --side-ink: #18181b;
-  --side-accent: #3b4fe0;
-  --side-inset: inset 0 1px 2px rgb(24 24 40 / 6%);
-  --shade: 24 24 40;
-  --stage: #18181b;
-  --stage-ink: 244 244 246;
-  --stage-accent: 255 255 255;
-  color-scheme: light;
-}
-
 /* Everything else is derived, so a theme is only the values above. */
 :root {
   --rule: color-mix(in srgb, var(--ink) 11%, transparent);
@@ -178,9 +110,6 @@
   --well: color-mix(in srgb, var(--ink) 6%, transparent);
   --side-soft: color-mix(in srgb, var(--side-ink) 74%, transparent);
   --side-rule: color-mix(in srgb, var(--side-ink) 12%, var(--side));
-}
-:root:not([data-theme="light"]) {
-  --side-inset: inset 0 1px 2px rgb(0 0 0 / 60%);
 }
 
 @theme inline {

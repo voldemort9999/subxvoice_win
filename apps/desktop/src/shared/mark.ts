@@ -1,6 +1,6 @@
 /**
  * The SUBXVoice mark: the X of SUBX, drawn as a straight line (the text, cream) crossed by a sound
- * wave (the voice, ultramarine). Voice becoming text, in one letter (user's pick, 2026-11-19).
+ * wave (the voice, clear blue). Voice becoming text, in one letter (user's pick, 2026-11-19).
  *
  * Geometry, the SVG and the rasteriser live here, with no Electron import, so every copy of the
  * mark comes from one definition: the sidebar (`renderer/src/shared/Mark.tsx`), the Dock and menu
@@ -15,9 +15,9 @@
 export const PLATE = { r: 0x16, g: 0x14, b: 0x12 };
 /** Butter cream: the line. */
 export const CREAM = { r: 0xf2, g: 0xe8, b: 0xc8 };
-/** Ultramarine, lifted to read on soft black: the wave. */
-export const BLUE = { r: 0x6b, g: 0x7c, b: 0xff };
-export const HEX = { plate: "#161412", cream: "#f2e8c8", blue: "#6b7cff" } as const;
+/** A clear blue, never a violet (the Mac, 01c18c0: no purple anywhere): the wave. */
+export const BLUE = { r: 0x6f, g: 0xa6, b: 0xf0 };
+export const HEX = { plate: "#161412", cream: "#f2e8c8", blue: "#6fa6f0" } as const;
 
 export interface Proportions {
   /** Half the length of each stroke, along its diagonal. */

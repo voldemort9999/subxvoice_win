@@ -8,7 +8,7 @@ import { MotionMark } from "../shared/MotionMark";
  *
  * The pill floats over every app, light or dark, so its colours are fixed rather than themed:
  * the soft-black plate of the app mark with cream type, or the reverse for "Cream", and the bright
- * ultramarine for the one thing happening now. Literal colours, so the previews in the main window,
+ * blue for the one thing happening now. Literal colours, so the previews in the main window,
  * which has its own theme tokens, draw it identically.
  */
 interface Palette {
@@ -37,14 +37,14 @@ const DARK: Palette = {
   idleLine: "border-[#f2e8c8]/30",
   chip: "bg-[#f2e8c8]/12",
   bar: "bg-[#f2e8c8]/85",
-  accentBg: "bg-[#7c8bff]",
-  accentText: "text-[#7c8bff]",
-  accentBorder: "border-[#7c8bff]/70",
+  accentBg: "bg-[#6fa6f0]",
+  accentText: "text-[#6fa6f0]",
+  accentBorder: "border-[#6fa6f0]/70",
   onAccent: "text-[#161412]",
   shimmer:
     "bg-[linear-gradient(90deg,rgb(242_232_200/45%)_0%,rgb(242_232_200/100%)_50%,rgb(242_232_200/45%)_100%)]",
   inkHex: "#f2e8c8",
-  accentHex: "#7c8bff",
+  accentHex: "#6fa6f0",
 };
 
 export const BAR_COUNT = 14;

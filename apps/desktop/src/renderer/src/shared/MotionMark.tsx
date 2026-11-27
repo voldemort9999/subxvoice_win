@@ -13,7 +13,7 @@ export function MotionMark({
   cursor = HEX.cream,
 }: {
   className?: string;
-  /** The wave's colour: ultramarine, except on an ultramarine button where it would vanish. */
+  /** The wave's colour: blue, except on a blue button where it would vanish. */
   wave?: string;
   /** The underscore's colour: cream on soft black, ink on cream. */
   cursor?: string;

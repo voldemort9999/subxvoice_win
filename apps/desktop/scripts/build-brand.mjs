@@ -25,7 +25,14 @@ import { ALONE, HEX, lineEnds, markSvg, motionSvg, wavePoints } from "../src/sha
 
 const desktop = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(desktop, "..", "..", "brand");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// Chrome on a Mac, or Chrome / Edge on Windows (both are Chromium and take the same flags).
+const CHROME =
+  [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+  ].find((path) => existsSync(path)) ?? "";
 
 const dirs = { svg: join(out, "svg"), png: join(out, "png"), app: join(out, "app-icon") };
 for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
@@ -78,7 +85,7 @@ for (const [name, svg] of Object.entries(svgs)) writeFileSync(join(dirs.svg, `${
 // ---- PNG ------------------------------------------------------------------------------------
 
 if (!existsSync(CHROME)) {
-  console.log(`SVGs written to ${dirs.svg}. Google Chrome not found, so no PNGs this time.`);
+  console.log(`SVGs written to ${dirs.svg}. Neither Chrome nor Edge found, so no PNGs this time.`);
   process.exit(0);
 }
 const profile = mkdtempSync(join(tmpdir(), "subx-brand-"));
@@ -135,7 +142,9 @@ for (const [name, size] of [
 ]) {
   writeFileSync(join(iconset, `icon_${name}.png`), readFileSync(join(dirs.png, `subx-icon-${size}.png`)));
 }
-execFileSync("iconutil", ["-c", "icns", iconset, "-o", join(dirs.app, "SUBXVoice.icns")]);
+// iconutil is macOS's own; elsewhere the .icns is left as it was.
+if (process.platform === "darwin")
+  execFileSync("iconutil", ["-c", "icns", iconset, "-o", join(dirs.app, "SUBXVoice.icns")]);
 
 // An .ico is a small header and a directory pointing at whole PNG files, which every browser reads.
 const icoSizes = [16, 32, 48];

@@ -8,7 +8,7 @@ const WAVE = wavePoints(ON_PLATE)
 /**
  * The app mark, drawn from the same numbers as the Dock, menu-bar and installer icons
  * (`shared/mark.ts`), so the one in the sidebar cannot drift from the one in the Dock: the X of
- * SUBX as a cream line crossed by an ultramarine wave, on the soft-black plate. Fixed colours,
+ * SUBX as a cream line crossed by a blue wave, on the soft-black plate. Fixed colours,
  * because it is a logo and not part of the theme.
  */
 export function Mark({ className = "h-7 w-7" }: { className?: string }) {

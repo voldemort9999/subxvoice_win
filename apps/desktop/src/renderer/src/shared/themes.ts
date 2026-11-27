@@ -1,43 +1,26 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The window's themes. Each is three colours in roughly 60 / 30 / 10 — the page, the instruments
- * on it, and one accent for the voice — and its values live in styles.css under [data-theme].
- * `swatch` repeats them here only so Settings can show each theme before it is picked.
+ * The window's two themes, Light and Dark (the Mac app dropped Butter, Ink and Plum, 96d78ad: every
+ * new screen had to be checked in each). Each is three colours in roughly 60 / 30 / 10, and its
+ * values live in styles.css under [data-theme]; `swatch` repeats them only so Settings can show
+ * each theme before it is picked.
  *
- * Kept per Mac in localStorage, like any appearance choice: it describes this screen, not the
+ * Kept per PC in localStorage, like any appearance choice: it describes this screen, not the
  * person, and it must apply before the first paint, which a settings round trip cannot do.
  */
 export const THEMES = [
   {
-    id: "butter",
-    name: "Butter",
-    feel: "Warm and calm. Cream is easy on the eyes; ultramarine reads as trust and clarity.",
-    swatch: { page: "#f2e8c8", side: "#161412", accent: "#3046e8" },
-  },
-  {
     id: "light",
     name: "Light",
-    feel: "Clean and bright, for a well-lit room. White paper, a grey sidebar, and the logo's blue for what matters.",
-    swatch: { page: "#ffffff", side: "#f3f3f5", accent: "#3b4fe0" },
+    feel: "Soft cream and a clear blue, for a well-lit room.",
+    swatch: { page: "#fbf8f1", side: "#f3eee2", accent: "#1d5aae" },
   },
   {
-    id: "night",
-    name: "Night",
-    feel: "Low glare for late hours. Charcoal throughout and dim cream text, so nothing on screen shouts.",
-    swatch: { page: "#191715", side: "#2e2a26", accent: "#7c89f5" },
-  },
-  {
-    id: "ink",
-    name: "Ink",
-    feel: "Deep focus. Navy steadies attention; a deep teal marks what to act on, without shouting.",
-    swatch: { page: "#e8ecf3", side: "#13203a", accent: "#1b7d74" },
-  },
-  {
-    id: "plum",
-    name: "Plum",
-    feel: "Creative and warm. Plum leans to imagination; a soft rose keeps it gentle.",
-    swatch: { page: "#f3ecf1", side: "#2c1830", accent: "#a84d78" },
+    id: "dark",
+    name: "Dark",
+    feel: "Low glare for late hours. Warm charcoal and a soft blue, so nothing on screen shouts.",
+    swatch: { page: "#1b1a18", side: "#24221f", accent: "#8db8f2" },
   },
 ] as const;
 
@@ -89,9 +72,17 @@ export const FONTS = [
 
 export type FontId = (typeof FONTS)[number]["id"];
 
-/** "system" follows the Mac's own light/dark setting: Light by day, Night by night. */
+/** "system" follows Windows' own light/dark setting, and is where every PC starts. */
 export type ThemeChoice = ThemeId | "system";
-const SYSTEM_THEMES: Record<"light" | "dark", ThemeId> = { light: "light", dark: "night" };
+
+/**
+ * A choice saved before there were only two themes keeps its meaning: Night was the dark one;
+ * Butter, Ink and Plum all had light pages (the Mac's ThemeChoice(key:)).
+ */
+export function choiceFor(stored: string | null): ThemeChoice {
+  if (stored === null || stored === "system") return "system";
+  return stored === "dark" || stored === "night" ? "dark" : "light";
+}
 
 const THEME_KEY = "subx.theme.v3";
 const FONT_KEY = "subx.font";
@@ -106,12 +97,20 @@ function read<T extends string>(key: string, allowed: readonly { id: T }[], fall
   }
 }
 
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 const dark = window.matchMedia("(prefers-color-scheme: dark)");
-let choice: ThemeChoice = read<ThemeChoice>(THEME_KEY, [...THEMES, { id: "system" }], "butter");
+let choice: ThemeChoice = choiceFor(stored(THEME_KEY));
 const resolve = (value: ThemeChoice): ThemeId =>
-  value === "system" ? SYSTEM_THEMES[dark.matches ? "dark" : "light"] : value;
+  value === "system" ? (dark.matches ? "dark" : "light") : value;
 let theme: ThemeId = resolve(choice);
-// Mac's own font and Butter until the person picks something else (the user's call, 2026-11-20).
+// Windows' own font until the person picks something else (the user's call, 2026-11-20).
 let font: FontId = read(FONT_KEY, FONTS, "mac");
 
 /** Called once before React renders, so the first frame is already in the chosen look. */
@@ -136,7 +135,7 @@ export function setTheme(next: ThemeChoice): void {
   save(THEME_KEY, next);
 }
 
-// When the Mac switches between light and dark, a window set to "system" follows at once.
+// When Windows switches between light and dark, a window set to "system" follows at once.
 dark.addEventListener("change", () => {
   if (choice !== "system") return;
   theme = resolve(choice);

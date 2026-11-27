@@ -469,9 +469,10 @@ function ThemePicker() {
       chosen ? "border-accent bg-paper ring-2 ring-accent/40" : "border-rule hover:bg-well"
     }`;
   const light = THEMES.find((option) => option.id === "light")?.swatch;
-  const night = THEMES.find((option) => option.id === "night")?.swatch;
+  const dark = THEMES.find((option) => option.id === "dark")?.swatch;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    // One row of three: Match Windows, Light, Dark (the Mac's AppearanceTab).
+    <div className="grid grid-cols-3 gap-3">
       {/* First, because it is the choice that needs no further thought. */}
       <button
         type="button"
@@ -486,7 +487,7 @@ function ThemePicker() {
           />
           <span
             className="w-1/2"
-            style={{ background: `linear-gradient(90deg, ${night?.page} 70%, ${night?.side})` }}
+            style={{ background: `linear-gradient(90deg, ${dark?.page} 70%, ${dark?.side})` }}
           />
         </span>
         <span className="mt-3 flex items-center justify-between font-semibold">
@@ -494,7 +495,7 @@ function ThemePicker() {
           {choice === "system" && <span className="text-xs font-medium text-accent-ink">In use</span>}
         </span>
         <span className="mt-1 block text-xs leading-relaxed text-ink-soft">
-          Light when Windows is light, Night when it is dark. Changes with it.
+          Light when Windows is light, Dark when it is dark. Changes with it.
         </span>
       </button>
       {THEMES.map((option) => {
