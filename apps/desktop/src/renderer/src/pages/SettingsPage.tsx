@@ -6,6 +6,7 @@ import type { AppInfo, PillState, PillStyle, UpdateState, VoiceLanguages } from 
 import { PILL_PLACES, type PillPlace } from "../../../shared/pill-place";
 import { useFakeVoice } from "../pill/fakeVoice";
 import { PILL_STYLES, PillView } from "../pill/PillView";
+import { useAppLook } from "../shared/AppLabel";
 import { errorText } from "../shared/errors";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
 import {
@@ -41,6 +42,7 @@ import { FONTS, setFont, setTheme, THEMES, useFont, useThemeChoice } from "../sh
 import { DEFAULT_STYLES, STYLE_CATEGORIES, STYLE_OPTIONS } from "../shared/tones";
 import { Button, Field, Notice, Select, Toggle } from "../shared/ui";
 import { Working } from "../shared/Working";
+import { listenLevel, webMicDevices } from "../shared/webMic";
 import { PlanTab } from "./PlanTab";
 import { TeamTab } from "./TeamTab";
 
@@ -233,15 +235,10 @@ export function SettingsPage({ info, onClose }: { info: AppInfo | null; onClose:
                     />
                   )}
                   {info && !info.nativeMicrophone && (
-                    <Select
-                      label="Microphone"
-                      value={settings?.microphoneId ?? ""}
-                      onChange={(value) => update({ microphoneId: value })}
-                      options={[
-                        { value: "", label: "System default" },
-                        ...microphones.map((option) => ({ value: option.id, label: option.label })),
-                      ]}
-                      empty="No microphone found. Allow microphone access, then reopen this page."
+                    <WebMicrophone
+                      chosen={settings?.microphoneId ?? ""}
+                      onChoose={(id) => update({ microphoneId: id })}
+                      known={microphones.length}
                     />
                   )}
                   <div className="mt-2 text-xs leading-relaxed text-ink-soft">
@@ -318,22 +315,22 @@ export function SettingsPage({ info, onClose }: { info: AppInfo | null; onClose:
                     checked={settings?.pillWhenIdle ?? true}
                     onChange={(checked) => update({ pillWhenIdle: checked })}
                   />
-                  {/* A hidden pill has no menu of its own to undo the hide from (the Mac app, 7e4b183). */}
-                  {(settings?.pillHiddenUntil ?? 0) > Date.now() && (
-                    <p className="mt-3 flex flex-wrap items-center gap-3 text-ink-soft">
-                      Hidden from its menu until{" "}
-                      {new Date(settings?.pillHiddenUntil ?? 0).toLocaleString([], {
-                        weekday: "short",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                      .
-                      <Button onClick={() => update({ pillHiddenUntil: 0 })} className="py-1">
-                        Show it now
-                      </Button>
-                    </p>
-                  )}
                 </Field>
+                {/* A hidden pill has no menu of its own to undo the hide from (the Mac app, 7e4b183). */}
+                {(settings?.pillHiddenUntil ?? 0) > Date.now() && (
+                  <Field
+                    label="Hidden for now"
+                    hint={`Hidden from the pill's menu until ${new Date(
+                      settings?.pillHiddenUntil ?? 0,
+                    ).toLocaleString([], {
+                      weekday: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}. It still shows while you dictate.`}
+                  >
+                    <Button onClick={() => update({ pillHiddenUntil: 0 })}>Show it now</Button>
+                  </Field>
+                )}
               </div>
             )}
 
@@ -731,6 +728,52 @@ function NativeMicrophone({ chosen, onChoose }: { chosen: string; onChoose: (id:
   );
 }
 
+/**
+ * Windows' microphones as the Mac shows its own: the one in use, and Change for a picker with a live
+ * level (MicPicker). The pill records through Web Audio, so the list and the bars come from this window.
+ */
+function WebMicrophone({
+  chosen,
+  onChoose,
+  known,
+}: {
+  chosen: string;
+  onChoose: (id: string) => void;
+  /** How many inputs useMicrophones saw; a change (a headset plugged in) reads the list again. */
+  known: number;
+}) {
+  const [devices, setDevices] = useState<MicDevice[]>([]);
+  const [picking, setPicking] = useState(false);
+  const load = useCallback(() => void webMicDevices().then(setDevices), []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `known` changing is the reason to read again.
+  useEffect(load, [load, known]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="pressed-in max-w-full truncate rounded-[10px] px-3 py-2">
+        {micSummary(devices, chosen)}
+      </span>
+      <Button
+        onClick={() => {
+          load();
+          setPicking(true);
+        }}
+      >
+        Change
+      </Button>
+      {picking && (
+        <MicPicker
+          devices={devices}
+          chosen={chosen}
+          onChoose={onChoose}
+          onClose={() => setPicking(false)}
+          listen={listenLevel}
+        />
+      )}
+    </div>
+  );
+}
+
 /** Every state the pill can be in, made up but drawn by the same view as the real one. */
 const PREVIEW: { label: string; state: PillState; hover?: boolean }[] = [
   { label: "Waiting", state: { kind: "idle" } },
@@ -738,7 +781,7 @@ const PREVIEW: { label: string; state: PillState; hover?: boolean }[] = [
   { label: "Listening", state: { kind: "listening" } },
   { label: "Hands-free", state: { kind: "listening", locked: true }, hover: true },
   { label: "Writing", state: { kind: "processing" } },
-  { label: "Copied", state: { kind: "done", message: "Copied · paste with Ctrl+V" } },
+  { label: "Typed", state: { kind: "done", message: "Let's meet tomorrow at 10." } },
   { label: "Learned a word", state: { kind: "learned", words: ["SUBXVoice"] } },
   { label: "No text box", state: { kind: "unplaced", text: "Let's meet tomorrow at 10." } },
 ];
@@ -749,6 +792,12 @@ const PREVIEW: { label: string; state: PillState; hover?: boolean }[] = [
  */
 function PillPreview({ hotkey, look }: { hotkey: string; look: PillStyle }) {
   const { levels, elapsedMs: elapsed } = useFakeVoice();
+  // The app a preview pretends to type into, by its own icon (the Mac shows Notes).
+  const sample = useAppLook(
+    String.raw`C:\Windows\System32
+otepad.exe`,
+    "Notepad",
+  ).icon;
 
   return (
     <div className="mb-6 overflow-hidden rounded-[16px] bg-[radial-gradient(120%_140%_at_50%_0%,#3a3530,#0f0e0d)] px-6 py-4">
@@ -763,7 +812,9 @@ function PillPreview({ hotkey, look }: { hotkey: string; look: PillStyle }) {
             <span className="w-28 shrink-0 text-xs text-[#f2e8c8]/55">{item.label}</span>
             <div className="order-last flex h-10 min-w-0 basis-full items-center justify-center overflow-hidden lg:order-none lg:basis-0 lg:flex-1">
               <PillView
-                state={item.state}
+                state={
+                  item.state.kind === "listening" && sample ? { ...item.state, icon: sample } : item.state
+                }
                 levels={levels}
                 hover={item.hover ?? false}
                 hotkey={hotkey}

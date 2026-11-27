@@ -12,7 +12,7 @@ const ABOUT: Record<MicKind, { note: string; tone?: "good" | "warn" }> = {
   "built-in": { note: "Best choice · built into your PC", tone: "good" },
   wired: { note: "Wired microphone · clear and steady", tone: "good" },
   bluetooth: { note: "Not ideal · Bluetooth muffles your voice while recording", tone: "warn" },
-  iphone: { note: "Your iPhone as a microphone · can lag or drop out", tone: "warn" },
+  iphone: { note: "Your phone as a microphone · can lag or drop out", tone: "warn" },
   virtual: { note: "Virtual device · carries app audio, not your voice", tone: "warn" },
   other: { note: "Microphone" },
 };
@@ -43,28 +43,31 @@ export function MicPicker({
   chosen,
   onChoose,
   onClose,
+  listen = nativeLevel,
 }: {
   devices: MicDevice[];
   chosen: string;
   onChoose: (id: string) => void;
   onClose: () => void;
+  /** The level of the microphone in use; the Mac's own by default, this window's on Windows. */
+  listen?: (deviceId: string, onLevel: (level: number) => void) => () => void;
 }) {
   const [level, setLevel] = useState(0);
-
-  useEffect(() => {
-    const off = window.subx.mic.onLevel((value) => setLevel((previous) => Math.max(value, previous * 0.8)));
-    window.subx.mic.meter(true);
-    const onEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      off();
-      window.subx.mic.meter(false);
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [onClose]);
-
   // A device that was picked and then unplugged: recording follows the default until it is back.
   const active = devices.some((device) => device.id === chosen) ? chosen : "";
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [onClose]);
+
+  // The bars follow the microphone chosen now; a new choice listens to the new one.
+  useEffect(() => {
+    setLevel(0);
+    return listen(active, (value) => setLevel((previous) => Math.max(value, previous * 0.8)));
+  }, [active, listen]);
+
   const fallback = devices.find((device) => device.isDefault);
   const sorted = [...devices].sort((a, b) => RANK[a.kind] - RANK[b.kind] || a.name.localeCompare(b.name));
 
@@ -160,6 +163,16 @@ function Row({
       </button>
     </li>
   );
+}
+
+/** The Mac's native microphone, metered by the main process. */
+function nativeLevel(_deviceId: string, onLevel: (level: number) => void): () => void {
+  const off = window.subx.mic.onLevel(onLevel);
+  window.subx.mic.meter(true);
+  return () => {
+    off();
+    window.subx.mic.meter(false);
+  };
 }
 
 const BARS = 10;
