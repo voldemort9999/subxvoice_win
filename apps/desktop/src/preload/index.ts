@@ -75,6 +75,10 @@ const api: SubxApi = {
     thisDevice: () => ipcRenderer.invoke(IPC.statsThisDevice),
     onChanged: (listener) => subscribe(IPC.statsChanged, listener),
   },
+  screen: {
+    last: () => ipcRenderer.invoke(IPC.screenLast),
+    pickApps: () => ipcRenderer.invoke(IPC.screenPickApp),
+  },
   snippets: {
     list: () => ipcRenderer.invoke(IPC.snippetsList),
     save: (item) => ipcRenderer.invoke(IPC.snippetsSave, item),

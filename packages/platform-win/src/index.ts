@@ -28,6 +28,7 @@ export function createWinPlatform(): Platform {
     }),
     permissions: new WinPermissions(),
     context: new WinContextReader((path) => system.fileDescription(path)),
+    screen: { read: (context) => system.screenText(context.windowTitle ?? "") },
     field: new WinFieldReader({ read: () => system.focusedText(), foreground: foregroundHandle }),
     feedback: new WinAudioFeedback({
       play: playWave,

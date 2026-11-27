@@ -246,4 +246,25 @@ describe("SUBXVoice /v1/dictate plug", () => {
     (FakeSocket.last as FakeSocket).open();
     expect((FakeSocket.last as FakeSocket).controls()[0]).toEqual({ type: "start", sampleRate: 16000 });
   });
+
+  it("waits for the screen's text and sends it with the start, cut to what the server takes", async () => {
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeSocket;
+    let read!: (text: string) => void;
+    const screen = new Promise<string | null>((resolve) => {
+      read = resolve;
+    });
+    await new SubxDictateStt({ baseUrl: "http://x", token: () => "t" }).startStream({
+      vocabulary: [],
+      screen,
+    });
+    const socket = FakeSocket.last as FakeSocket;
+    socket.open();
+    expect(socket.controls()).toEqual([]);
+    read(`Chat with Aarnav
+${"x".repeat(5000)}`);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const start = socket.controls()[0] as { screen: string };
+    expect(start.screen.startsWith("Chat with Aarnav")).toBe(true);
+    expect(start.screen.length).toBe(4000);
+  });
 });

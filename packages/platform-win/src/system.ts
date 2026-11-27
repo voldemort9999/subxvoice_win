@@ -38,6 +38,16 @@ export class WinSystem {
     return plain || null;
   }
 
+  /**
+   * The text on the screen around the cursor, for the recogniser only (CmdField.ScreenText); null
+   * when nothing can or may be read. `title` is the window's, read already with the app in front.
+   */
+  async screenText(title: string): Promise<string | null> {
+    const literal = `'${title.replace(/'/g, "''")}'`;
+    const text = await this.worker.json<string | null>(`[CmdField]::ScreenText(${literal})`);
+    return typeof text === "string" && text.trim() ? text : null;
+  }
+
   /** The cursor's place in the focused box, in characters; null when it cannot be read. */
   async caretOffset(): Promise<number | null> {
     const at = Number(await this.worker.run("[CmdField]::CaretOffset()"));

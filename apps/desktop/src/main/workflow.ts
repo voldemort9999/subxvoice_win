@@ -46,6 +46,8 @@ export interface WorkflowDeps {
    * Asked for only when opening fails: the happy path must not pay for a round trip it does not need.
    */
   allowanceProblem?(): Promise<string | null>;
+  /** The screen's text around the cursor, read now (key-down) for the recogniser only; null: none. */
+  screen?(context: AppContext): Promise<string | null>;
   /** The person's snippets, read at key-down (the whole dictation one of them: its text goes in). */
   snippets?(): Promise<Snippet[]>;
   /** A snippet's text went in for what was said: counted for its page. */
@@ -81,12 +83,15 @@ export function createWorkflow(deps: WorkflowDeps): DictationEngine {
 
       // Opening here, on key-press, is what keeps release→paste short: the socket is already
       // warm and the words are recognised while the user is still speaking.
-      // Read now, while the socket opens, so the end of the dictation does not wait for the file.
+      // Read now, while the socket opens: the screen goes with the start, and the end of the
+      // dictation does not wait for the snippets' file.
+      const screen = deps.screen?.(context).catch(() => null);
       const snippets = (await deps.snippets?.().catch(() => [])) ?? [];
       let session: Awaited<ReturnType<Pipeline["open"]>>;
       try {
         session = await deps.pipeline.open(mode, context, {
           snippets: () => snippets,
+          ...(screen ? { screen } : {}),
           onTranscript: deps.onHeard,
           ...(deps.onPartial ? { onPartial: deps.onPartial } : {}),
           keep: sameAccount,

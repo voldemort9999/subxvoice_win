@@ -93,6 +93,11 @@ interface FinalMessage {
   rewriteError?: string;
 }
 
+/** The server takes 4,000 characters of screen text; more is cut there anyway. */
+const SCREEN_MAX = 4000;
+/** How long the start waits for the screen once the socket is open (the read itself has 200 ms). */
+const SCREEN_WAIT_MS = 300;
+
 class SubxStream implements SttStream {
   private readonly socket: WebSocket;
   private backlog: Uint8Array[] = [];
@@ -131,27 +136,19 @@ class SubxStream implements SttStream {
     });
     this.socket.binaryType = "arraybuffer";
 
-    this.socket.onopen = () => {
-      this.opened = true;
-      // The dictionary lives on this Mac; sent with every dictation, it is what the recogniser and
-      // the rewrite spell names from. Without it the user's words never left the app.
-      this.socket.send(
-        JSON.stringify({
-          type: "start",
-          sampleRate,
-          ...(stt.app ? { app: stt.app } : {}),
-          // Each word with the spellings it has come out as, so the rewrite can recognise them.
-          ...(stt.vocabulary.length > 0
-            ? { terms: (stt.hints ?? stt.vocabulary.map((word) => ({ word, heard: [] }))).slice(0, 300) }
-            : {}),
-          ...(settings ? { settings } : {}),
-          ...(options.onUsage ? { usage: true } : {}),
-        }),
-      );
-      for (const frame of this.backlog) this.socket.send(frame);
-      this.backlog = [];
-      if (this.released) this.socket.send(JSON.stringify({ type: "finalize" }));
-    };
+    // Read while the socket opens; the start waits for it at most SCREEN_WAIT_MS more, and the audio
+    // meanwhile waits in the backlog, as it always has before the start.
+    const screen = stt.screen
+      ? Promise.race([
+          stt.screen.catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), SCREEN_WAIT_MS)),
+        ])
+      : null;
+    // Without a screen read the start goes at once, as it always did.
+    this.socket.onopen = () =>
+      screen
+        ? void screen.then((text) => this.start(text, stt, sampleRate, settings, options))
+        : this.start(null, stt, sampleRate, settings, options);
     this.socket.onmessage = (event) => this.receive(event.data);
     this.socket.onerror = () =>
       this.fail(new SubxError("provider", "Can't reach SUBXVoice. Check your internet connection."));
@@ -160,6 +157,38 @@ class SubxStream implements SttStream {
         this.fail(new SubxError("provider", "Lost the connection to SUBXVoice. Try again."));
       }
     };
+  }
+
+  private start(
+    screen: string | null,
+    stt: SttOptions,
+    sampleRate: number,
+    settings: Record<string, unknown> | null,
+    options: SubxOptions,
+  ): void {
+    // Closed while the screen was read: nothing to start.
+    if (this.socket.readyState !== 1) return;
+    this.opened = true;
+    // The dictionary lives on this Mac; sent with every dictation, it is what the recogniser and
+    // the rewrite spell names from. Without it the user's words never left the app.
+    this.socket.send(
+      JSON.stringify({
+        type: "start",
+        sampleRate,
+        ...(stt.app ? { app: stt.app } : {}),
+        // Each word with the spellings it has come out as, so the rewrite can recognise them.
+        ...(stt.vocabulary.length > 0
+          ? { terms: (stt.hints ?? stt.vocabulary.map((word) => ({ word, heard: [] }))).slice(0, 300) }
+          : {}),
+        ...(settings ? { settings } : {}),
+        ...(options.onUsage ? { usage: true } : {}),
+        // The screen's text, for the recogniser only; the server keeps none of it (APP-UPDATES 11-26).
+        ...(screen ? { screen: screen.slice(0, SCREEN_MAX) } : {}),
+      }),
+    );
+    for (const frame of this.backlog) this.socket.send(frame);
+    this.backlog = [];
+    if (this.released) this.socket.send(JSON.stringify({ type: "finalize" }));
   }
 
   push(samples: Int16Array): void {

@@ -261,6 +261,8 @@ public class CmcpAudio {
  */
 const FIELD = String.raw`
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -276,9 +278,21 @@ public interface IUIAutomationElement {
 
 [ComImport, Guid("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IUIAutomation {
-  void CompareElements(); void CompareRuntimeIds(); void GetRootElement(); void ElementFromHandle();
+  int CompareElements(IUIAutomationElement a, IUIAutomationElement b);
+  void CompareRuntimeIds(); void GetRootElement(); void ElementFromHandle();
   void ElementFromPoint();
   IUIAutomationElement GetFocusedElement();
+  void GetRootElementBuildCache(); void ElementFromHandleBuildCache(); void ElementFromPointBuildCache();
+  void GetFocusedElementBuildCache(); void CreateTreeWalker();
+  IUIAutomationTreeWalker ControlViewWalker { get; }
+}
+
+[ComImport, Guid("4042c624-389c-4afc-a630-9df854a541fc"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IUIAutomationTreeWalker {
+  IUIAutomationElement GetParentElement(IUIAutomationElement element);
+  IUIAutomationElement GetFirstChildElement(IUIAutomationElement element);
+  IUIAutomationElement GetLastChildElement(IUIAutomationElement element);
+  IUIAutomationElement GetNextSiblingElement(IUIAutomationElement element);
 }
 
 [ComImport, Guid("ff48dba4-60ef-4201-aa87-54103eef594e")] public class CUIAutomation { }
@@ -346,6 +360,101 @@ public static class CmdField {
       return text == null ? -1 : text.Length;
     } catch (Exception) { return -1; }
   }
+
+  // The text on the screen around where the words will go, for the recogniser only (the Mac's
+  // ScreenReader, 08c582a): the window's title, up to 500 characters before the cursor and 200 after
+  // in the box, then the window's visible text nearest the box first, up to 1,500 characters. Within
+  // 200 ms; never a password box, and nothing at all when one is anywhere in what is walked. JSON
+  // string, or "null" when nothing can or may be read.
+  public static string ScreenText(string title) {
+    Stopwatch clock = Stopwatch.StartNew();
+    if (uia == null) uia = (IUIAutomation)new CUIAutomation();
+    IUIAutomationElement focus;
+    try { focus = uia.GetFocusedElement(); } catch (COMException) { return "null"; }
+    if (focus == null || Is(focus, IsPassword)) return "null";
+    List<string> parts = new List<string>();
+    HashSet<string> seen = new HashSet<string>();
+    Action<string> keep = delegate(string text) {
+      string line = text == null ? "" : text.Trim();
+      if (line.Length > 0 && line.Length < 4000 && seen.Add(line)) parts.Add(line);
+    };
+    keep(title);
+    try { keep(AroundCursor(focus)); } catch (Exception) { }
+
+    try {
+      IUIAutomationTreeWalker walker = uia.ControlViewWalker;
+      int left = 1500, visited = 0;
+      IUIAutomationElement came = focus;
+      IUIAutomationElement level = walker.GetParentElement(focus);
+      while (level != null && left > 0 && visited < 1500 && clock.ElapsedMilliseconds < 200) {
+        Queue<IUIAutomationElement> queue = new Queue<IUIAutomationElement>();
+        queue.Enqueue(level);
+        while (queue.Count > 0 && left > 0 && visited < 1500 && clock.ElapsedMilliseconds < 200) {
+          IUIAutomationElement node = queue.Dequeue();
+          visited++;
+          if (Is(node, IsPassword)) return "null";
+          // Scrolled away (a long chat's history): neither it nor what is inside it is read.
+          if (Is(node, IsOffscreen)) continue;
+          string text = Visible(node);
+          if (text != null) {
+            string piece = text.Trim();
+            if (piece.Length > left) piece = piece.Substring(0, left);
+            if (piece.Length > 0 && seen.Add(piece)) { parts.Add(piece); left -= piece.Length; }
+          }
+          IUIAutomationElement child = walker.GetFirstChildElement(node);
+          while (child != null) {
+            // The part already walked (the box, then each level inside this one) is not read twice.
+            if (uia.CompareElements(child, came) == 0) queue.Enqueue(child);
+            child = walker.GetNextSiblingElement(child);
+          }
+        }
+        IUIAutomationElement up = walker.GetParentElement(level);
+        // The window in front is the last level: its parent is the desktop.
+        if (up == null || walker.GetParentElement(up) == null) break;
+        came = level;
+        level = up;
+      }
+    } catch (Exception) { }
+    return parts.Count == 0 ? "null" : Json(string.Join("\n", parts));
+  }
+
+  // Up to 500 characters before the cursor and 200 after it, on whole characters.
+  static string AroundCursor(IUIAutomationElement e) {
+    if (Is(e, IsTextPatternAvailable)) {
+      IUIAutomationTextPattern pattern = (IUIAutomationTextPattern)e.GetCurrentPattern(TextPattern);
+      IUIAutomationTextRangeArray selection = pattern.GetSelection();
+      if (selection != null && selection.Length > 0) {
+        IUIAutomationTextRange before = pattern.DocumentRange.Clone();
+        before.MoveEndpointByRange(1, selection.GetElement(0), 0);
+        IUIAutomationTextRange after = pattern.DocumentRange.Clone();
+        after.MoveEndpointByRange(0, selection.GetElement(0), 1);
+        string head = Tail(before.GetText(-1) ?? "", 500);
+        return head + (after.GetText(200) ?? "");
+      }
+      return Tail(pattern.DocumentRange.GetText(-1) ?? "", 700);
+    }
+    if (Is(e, IsValuePatternAvailable)) return Tail(e.GetCurrentPropertyValue(Value) as string ?? "", 700);
+    return null;
+  }
+
+  static string Tail(string text, int count) {
+    if (text.Length <= count) return text;
+    int start = text.Length - count;
+    if (char.IsLowSurrogate(text[start])) start++;
+    return text.Substring(start);
+  }
+
+  // What a piece of the window shows as words: labels, messages, other text boxes, cells. Buttons,
+  // links, tabs and menus are the app's own controls, not what is written about.
+  static string Visible(IUIAutomationElement node) {
+    object type = node.GetCurrentPropertyValue(ControlType);
+    int kind = type is int ? (int)type : 0;
+    if (kind == 50020 || kind == 50029) return node.GetCurrentPropertyValue(Name) as string;
+    if (kind == 50004 && Is(node, IsValuePatternAvailable)) return node.GetCurrentPropertyValue(Value) as string;
+    return null;
+  }
+
+  const int Name = 30005, IsOffscreen = 30022;
 
   // What the focused element is, for the paste (focus.ts decides): JSON, or "null" with nothing
   // focused. Only what kind of thing it is; never its text.

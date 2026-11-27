@@ -49,6 +49,10 @@ export const IPC = {
   statsChanged: "stats:changed",
   /** Words arrived from another device: the dictionary page reads its list again. */
   dictionaryChanged: "dictionary:changed",
+  /** What the last dictation read from the screen (memory only). */
+  screenLast: "screen:last",
+  /** Choose an app (an .exe) the screen is never read in. */
+  screenPickApp: "screen:pick-app",
   snippetsList: "snippets:list",
   snippetsSave: "snippets:save",
   snippetsRemove: "snippets:remove",
@@ -192,6 +196,17 @@ export interface AppSettings {
   pillPosition: PillPlace;
   /** Add a word to the dictionary when the user corrects it after a paste. */
   learnWords: boolean;
+  /** Read the screen around the cursor at key-down, for the recogniser only (Mac 08c582a). */
+  screenContext: boolean;
+  /** Apps (their executables) the screen is never read in. */
+  screenContextOff: string[];
+}
+
+/** The screen text the last dictation read, as it was sent; kept in memory until the app quits. */
+export interface LastScreen {
+  app: string;
+  text: string | null;
+  at: number;
 }
 
 /**
@@ -548,6 +563,11 @@ export interface SubxApi {
     thisDevice(): Promise<Record<string, DayTotal>>;
     /** The totals or the allowance changed; read them again (no network: they are kept here). */
     onChanged(listener: () => void): () => void;
+  };
+  screen: {
+    last(): Promise<LastScreen | null>;
+    /** The executables picked in a file dialog, [] when cancelled. */
+    pickApps(): Promise<string[]>;
   };
   snippets: {
     list(): Promise<SnippetItem[]>;

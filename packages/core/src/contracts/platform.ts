@@ -177,4 +177,15 @@ export interface Platform {
   field?: FieldReader;
   /** Optional: without it the pill's window takes its own clicks. */
   clickCatcher?: ClickCatcher;
+  /** Optional: without it no screen text goes with a dictation. */
+  screen?: ScreenReader;
+}
+
+/**
+ * The text on the screen around where the words will go, read at key-down while the person speaks,
+ * for the recogniser only: names and terms written there are then heard right (Mac 08c582a). Never a
+ * password field; null when nothing can or may be read.
+ */
+export interface ScreenReader {
+  read(context: AppContext): Promise<string | null>;
 }

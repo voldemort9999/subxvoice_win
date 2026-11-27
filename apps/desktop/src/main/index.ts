@@ -14,6 +14,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
@@ -32,6 +33,7 @@ import {
   type DayTotal,
   HISTORY_KEEP_MS,
   IPC,
+  type LastScreen,
   type MicrophoneOption,
   type Navigation,
   type PermissionStatus,
@@ -354,6 +356,9 @@ function notifySnippetsChanged(): void {
   mainWindow?.webContents.send(IPC.snippetsChanged);
 }
 
+/** What the last dictation read from the screen, kept until the app quits and nowhere else. */
+let lastScreen: LastScreen | null = null;
+
 /** How long the pill's offer of a snippet stands (the Mac's 15 s). */
 const SNIPPET_OFFER_MS = 15_000;
 /** The snippet offered on the pill now, if any. */
@@ -439,6 +444,11 @@ function assertSettings(value: unknown, accepts: (keys: string) => boolean): Par
   )
     patch.pillHiddenUntil = input.pillHiddenUntil;
   if (typeof input.learnWords === "boolean") patch.learnWords = input.learnWords;
+  if (typeof input.screenContext === "boolean") patch.screenContext = input.screenContext;
+  if (Array.isArray(input.screenContextOff))
+    patch.screenContextOff = input.screenContextOff
+      .filter((item): item is string => typeof item === "string" && item.length < 1024)
+      .slice(0, 100);
   if (input.pillStyle === "classic" || input.pillStyle === "line")
     patch.pillStyle = input.pillStyle as AppSettings["pillStyle"];
   if (
@@ -609,6 +619,8 @@ async function start(): Promise<void> {
     pillWhenIdle: true,
     pillHiddenUntil: 0,
     learnWords: true,
+    screenContext: true,
+    screenContextOff: [],
     pillPosition: "bottom",
     keepHistory: "forever",
     pillStyle: "classic",
@@ -801,6 +813,18 @@ async function start(): Promise<void> {
   void pruneHistory();
   setInterval(() => void pruneHistory(), 60 * 60 * 1000);
 
+  handle(IPC.screenLast, () => lastScreen);
+  handle(IPC.screenPickApp, async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      title: "Never read the screen in",
+      defaultPath: process.env.ProgramFiles ?? "C:\\Program Files",
+      filters: [{ name: "Apps", extensions: ["exe"] }],
+      properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[],
+    };
+    const picked = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    return picked.canceled ? [] : picked.filePaths;
+  });
   handle(IPC.snippetsList, () => snippets.list());
   handle(IPC.snippetsSave, async (_event, item: unknown) => {
     const saved = await snippets.save(assertSnippet(item));
@@ -878,6 +902,19 @@ async function start(): Promise<void> {
       onHistoryChanged: notifyHistoryChanged,
       onPasted: (text, app) => void learner.pasted(text, app),
       snippets: () => snippets.usable(),
+      screen: async (context) => {
+        const { screenContext, screenContextOff } = await settings.all();
+        const app = context.appId ?? "";
+        const off = (screenContextOff ?? []).some((item) => item.toLowerCase() === app.toLowerCase());
+        // Unless turned off, or off for this app; never SUBXVoice's own windows.
+        const ours = app.toLowerCase() === process.execPath.toLowerCase();
+        const text =
+          screenContext !== false && !off && !ours && platform.screen
+            ? await platform.screen.read(context).catch(() => null)
+            : null;
+        lastScreen = { app: context.appName ?? "", text, at: Date.now() };
+        return text;
+      },
       onSnippetUsed: (id) => void snippets.used(id).then(notifySnippetsChanged),
       onSnippetOffer: (offer) => offerSnippet(offer),
       log: (line) => console.log(line),

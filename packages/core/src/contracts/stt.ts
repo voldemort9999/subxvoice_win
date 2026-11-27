@@ -20,6 +20,11 @@ export interface SttOptions {
   app?: string;
   /** Called with the words recognised so far, each time they change, for a live preview. */
   onPartial?: (text: string) => void;
+  /**
+   * The text on the screen around the cursor, for the recogniser only (never the clean-up model),
+   * being read while the stream opens. Plugs that cannot use it leave it.
+   */
+  screen?: Promise<string | null>;
 }
 
 export interface Transcript {

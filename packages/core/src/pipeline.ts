@@ -39,6 +39,8 @@ export interface ProcessOptions {
    * key going down and the text coming back, so one person's words never land in another's history.
    */
   keep?: () => boolean;
+  /** The screen's text around the cursor, being read now, for the recogniser only. */
+  screen?: Promise<string | null>;
   /** The person's snippets: the whole dictation one of them, and its text goes in instead. */
   snippets?: () => Snippet[];
 }
@@ -87,6 +89,7 @@ export class Pipeline {
       hints,
       ...(context.appName ? { app: context.appName } : {}),
       ...(options.onPartial ? { onPartial: options.onPartial } : {}),
+      ...(options.screen ? { screen: options.screen } : {}),
     };
     // Prefer the live stream; fall back to buffering for plugs that only do batch (the fake).
     const stream = this.deps.stt.startStream ? await this.deps.stt.startStream(sttOptions) : null;

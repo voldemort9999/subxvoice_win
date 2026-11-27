@@ -2,12 +2,20 @@ import { BAR_PX, HotkeyNote, MicrophoneNote, PermissionsIntro } from "@platform/
 import type { MicDevice } from "@subx/core";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { hotkeyLabel } from "../../../shared/hotkey-label";
-import type { AppInfo, PillState, PillStyle, UpdateState, VoiceLanguages } from "../../../shared/ipc";
+import type {
+  AppInfo,
+  LastScreen,
+  PillState,
+  PillStyle,
+  UpdateState,
+  VoiceLanguages,
+} from "../../../shared/ipc";
 import { PILL_PLACES, type PillPlace } from "../../../shared/pill-place";
 import { useFakeVoice } from "../pill/fakeVoice";
 import { PILL_STYLES, PillView } from "../pill/PillView";
-import { useAppLook } from "../shared/AppLabel";
+import { AppLabel, useAppLook } from "../shared/AppLabel";
 import { errorText } from "../shared/errors";
+import { formatTime } from "../shared/format";
 import { HotkeyRecorder } from "../shared/HotkeyRecorder";
 import {
   useAccount,
@@ -395,6 +403,35 @@ export function SettingsPage({ info, onClose }: { info: AppInfo | null; onClose:
                   />
                 </Field>
                 <Field
+                  label="Use the screen to hear names"
+                  hint="While you speak, the words around your cursor and in the window you are in go to the speech recogniser, so names and terms written there come out right. Never a password field, never kept, and never used to write your text."
+                >
+                  <Toggle
+                    label="Use the screen to hear names"
+                    checked={settings?.screenContext ?? true}
+                    onChange={(checked) => update({ screenContext: checked })}
+                  />
+                </Field>
+                {(settings?.screenContext ?? true) && (
+                  <>
+                    <Field
+                      label="What was read"
+                      hint="The text read from the screen for your last dictation, exactly as it was sent. Kept until SUBXVoice quits, nowhere else."
+                    >
+                      <LastScreenButton />
+                    </Field>
+                    <Field
+                      label="Not in these apps"
+                      hint="The screen is never read while you speak in these."
+                    >
+                      <ScreenOffApps
+                        off={settings?.screenContextOff ?? []}
+                        onChange={(screenContextOff) => update({ screenContextOff })}
+                      />
+                    </Field>
+                  </>
+                )}
+                <Field
                   label="Delete my data"
                   hint="Every dictation and recording on this PC, now. This cannot be undone."
                 >
@@ -770,6 +807,104 @@ function WebMicrophone({
           listen={listenLevel}
         />
       )}
+    </div>
+  );
+}
+
+/** The text the last dictation read from the screen, as it was sent, so it can be seen, not guessed. */
+function LastScreenButton() {
+  const [last, setLast] = useState<LastScreen | null | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    void window.subx.screen.last().then(setLast);
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Show what was read</Button>
+      {open && (
+        <div className="fixed inset-0 z-50 grid place-items-center">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+            className="absolute inset-0 cursor-default bg-black/35"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="What was read"
+            className="animate-arrive relative w-[min(620px,calc(100vw-48px))] space-y-3 rounded-[16px] border border-rule bg-page p-7 text-ink shadow-[0_14px_48px_rgb(0_0_0/35%)]"
+          >
+            <h2 className="text-[20px]">What was read</h2>
+            {last === undefined ? (
+              <p>&nbsp;</p>
+            ) : last ? (
+              <>
+                <p className="text-[13px] text-ink-soft">
+                  {last.app} at {formatTime(last.at)}.{" "}
+                  {last.text
+                    ? `${last.text.length} characters, sent to the speech recogniser only.`
+                    : "Nothing was read."}
+                </p>
+                {last.text && (
+                  <pre className="scroll-area m-0 h-80 overflow-auto rounded-[10px] bg-well p-3 font-mono text-[12px] whitespace-pre-wrap select-text">
+                    {last.text}
+                  </pre>
+                )}
+              </>
+            ) : (
+              <p className="text-ink-soft">Nothing yet. Dictate once, then look here.</p>
+            )}
+            <div className="flex justify-end">
+              <Button onClick={() => setOpen(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The apps the screen is never read in, by name and icon, each with a way out; and a way to add one. */
+function ScreenOffApps({ off, onChange }: { off: string[]; onChange: (next: string[]) => void }) {
+  return (
+    <div className="space-y-2">
+      {off.map((id) => {
+        const file =
+          id
+            .split(/[\\/]/)
+            .pop()
+            ?.replace(/\.exe$/i, "") ?? id;
+        return (
+          <div key={id} className="flex w-[260px] items-center gap-2">
+            <AppLabel appId={id} stored={file} className="min-w-0 flex-1" />
+            <button
+              type="button"
+              onClick={() => onChange(off.filter((item) => item !== id))}
+              aria-label={`Read the screen in ${file} again`}
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-well hover:text-ink"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        );
+      })}
+      <Button
+        onClick={async () => {
+          const picked = await window.subx.screen.pickApps();
+          const fresh = picked.filter(
+            (path) => !off.some((item) => item.toLowerCase() === path.toLowerCase()),
+          );
+          if (fresh.length) onChange([...off, ...fresh]);
+        }}
+      >
+        Add an app
+      </Button>
     </div>
   );
 }
