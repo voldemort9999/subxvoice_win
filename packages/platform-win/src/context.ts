@@ -10,6 +10,14 @@ import { foregroundWindow } from "./win32";
  * exactly this reason.
  */
 export class WinContextReader implements ContextReader {
+  constructor(private readonly describe?: (exePath: string) => Promise<string | null>) {}
+
+  /** The executable's own description, as Windows names the app; the stored name when it has none. */
+  async displayName(appId: string): Promise<string | null> {
+    if (!this.describe || !/\.exe$/i.test(appId)) return null;
+    return this.describe(appId).catch(() => null);
+  }
+
   async current(): Promise<AppContext> {
     const window = foregroundWindow();
     if (!window) return {};

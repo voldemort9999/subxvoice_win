@@ -103,6 +103,11 @@ export interface Permissions {
 
 export interface ContextReader {
   current(): Promise<AppContext>;
+  /**
+   * The name people know an app by, from its `appId` ("Visual Studio Code" for Code.exe), for the
+   * screens only; null when the app is gone or names nothing. Optional: without it the stored name.
+   */
+  displayName?(appId: string): Promise<string | null>;
 }
 
 /**

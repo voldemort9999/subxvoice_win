@@ -43,8 +43,9 @@ export function AudioButton({ id }: { id: string }) {
       onClick={toggle}
       aria-label={playing ? "Pause recording" : "Play recording"}
       // Fills with blue while it plays: the one control on the row that is doing something.
-      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors ${
-        playing ? "border-accent bg-accent text-on-accent" : "border-rule-strong text-ink hover:border-ink"
+      // A filled circle only while it plays; at rest no ring, as a calm list draws it (Mac c6ed4fe).
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
+        playing ? "bg-accent text-on-accent" : "text-ink-soft hover:bg-well hover:text-ink"
       }`}
     >
       {playing ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="ml-0.5 h-3.5 w-3.5" />}

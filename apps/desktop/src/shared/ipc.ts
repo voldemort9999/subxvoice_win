@@ -41,6 +41,10 @@ export const IPC = {
   appRestart: "app:restart",
   historyList: "history:list",
   statsDays: "stats:days",
+  /** An app's name and icon as Windows shows them, from the `appId` kept with a dictation. */
+  appLook: "apps:look",
+  /** This PC's own day totals, for "on this PC" when the account is used on other devices too. */
+  statsThisDevice: "stats:this-device",
   /** The account's totals or allowance changed (a dictation, or another device): read them again. */
   statsChanged: "stats:changed",
   /** Words arrived from another device: the dictionary page reads its list again. */
@@ -125,6 +129,13 @@ export interface PendingFix {
 }
 
 /** One day's dictation, by the Mac's calendar ("2026-11-20"): counts only, never text. */
+/** An app as people know it: "Visual Studio Code" and its icon, not "Code". */
+export interface AppLook {
+  name: string;
+  /** A data: URL of the app's icon, "" when it has none. */
+  icon: string;
+}
+
 export interface DayTotal {
   words: number;
   speakingMs: number;
@@ -506,8 +517,14 @@ export interface SubxApi {
    * Words, speaking time and dictations per day: the account's, every device together, where the
    * server counted them; this Mac's own before that. Kept when history is deleted.
    */
+  apps: {
+    /** The name people know the app by and its icon (a data: URL, "" when none); `stored` if it is gone. */
+    look(appId: string, stored: string): Promise<AppLook>;
+  };
   stats: {
     days(): Promise<Record<string, DayTotal>>;
+    /** This PC's own counts by day (the Mac's stats:thisMac). */
+    thisDevice(): Promise<Record<string, DayTotal>>;
     /** The totals or the allowance changed; read them again (no network: they are kept here). */
     onChanged(listener: () => void): () => void;
   };

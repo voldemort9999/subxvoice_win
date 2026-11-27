@@ -23,6 +23,19 @@ export class WinSystem {
     return (await this.worker.json<string | null>("[CmdField]::FocusedText()")) ?? null;
   }
 
+  /**
+   * An executable's own description ("Visual Studio Code" for Code.exe), the name Task Manager and
+   * Start show; null when the file is gone or has none.
+   */
+  async fileDescription(path: string): Promise<string | null> {
+    const literal = `'${path.replace(/'/g, "''")}'`;
+    // run, not json: the description comes back as plain text, which is not JSON.
+    const name = await this.worker.run(
+      `if (Test-Path -LiteralPath ${literal}) { [System.Diagnostics.FileVersionInfo]::GetVersionInfo(${literal}).FileDescription } else { "" }`,
+    );
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  }
+
   /** What kind of element has the focus (never its text); null when nothing has. */
   async focusInfo(): Promise<FocusInfo | null> {
     const info = await this.worker.json<FocusInfo | null>("[CmdField]::FocusInfo()");

@@ -188,7 +188,11 @@ const appIcons = new Map<string, string>();
  */
 async function frontAppIcon(): Promise<string> {
   if (platform.os === "mac") return "";
-  const exe = (await platform.context?.current().catch(() => null))?.appId ?? "";
+  return iconOfExe((await platform.context?.current().catch(() => null))?.appId ?? "");
+}
+
+async function iconOfExe(exe: string): Promise<string> {
+  if (!exe) return "";
   if (!/\.exe$/i.test(exe) || /(SUBXVoice|electron)\.exe$/i.test(exe)) return "";
   const known = appIcons.get(exe);
   if (known !== undefined) return known;
@@ -198,6 +202,25 @@ async function frontAppIcon(): Promise<string> {
     .catch(() => "");
   appIcons.set(exe, icon);
   return icon;
+}
+
+const looks = new Map<string, Promise<{ name: string; icon: string }>>();
+
+/**
+ * An app as History and Insights show where words went: the name Windows gives it and its icon
+ * (the Mac's AppLook). Read once per app; what was stored with the dictation is the fallback.
+ */
+function lookOf(appId: string, stored: string): Promise<{ name: string; icon: string }> {
+  if (!appId) return Promise.resolve({ name: stored, icon: "" });
+  let look = looks.get(appId);
+  if (!look) {
+    look = Promise.all([
+      platform.context.displayName?.(appId).catch(() => null) ?? Promise.resolve(null),
+      iconOfExe(appId),
+    ]).then(([name, icon]) => ({ name: name ?? "", icon }));
+    looks.set(appId, look);
+  }
+  return look.then((found) => ({ name: found.name || stored, icon: found.icon }));
 }
 
 /** Windows' caption buttons' height; the page's drag strip is the same (platform/win/Chrome.tsx). */
@@ -709,6 +732,10 @@ async function start(): Promise<void> {
 
   handle(IPC.historyList, () => history.recent(Number.MAX_SAFE_INTEGER));
   handle(IPC.statsDays, () => accountTotals.days());
+  handle(IPC.appLook, (_event, appId: unknown, stored: unknown) =>
+    lookOf(typeof appId === "string" ? appId : "", typeof stored === "string" ? stored : ""),
+  );
+  handle(IPC.statsThisDevice, () => totals.days());
   handle(IPC.historyAudio, async (_event, id: unknown) => {
     const record = await history.find(assertString(id, "id"));
     if (!record?.audioPath) throw new Error("This recording has no audio");

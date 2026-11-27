@@ -67,8 +67,12 @@ const api: SubxApi = {
     clear: () => ipcRenderer.invoke(IPC.historyClear),
     onChanged: (listener) => subscribe(IPC.historyChanged, listener),
   },
+  apps: {
+    look: (appId, stored) => ipcRenderer.invoke(IPC.appLook, appId, stored),
+  },
   stats: {
     days: () => ipcRenderer.invoke(IPC.statsDays),
+    thisDevice: () => ipcRenderer.invoke(IPC.statsThisDevice),
     onChanged: (listener) => subscribe(IPC.statsChanged, listener),
   },
   dictionary: {

@@ -1,16 +1,20 @@
 import type { SessionRecord } from "@subx/core";
 import { useState } from "react";
+import { AppLabel } from "./AppLabel";
 import { AudioButton } from "./AudioButton";
 import { formatDuration, formatTime } from "./format";
 import { CopyButton, type MoreItem, MoreMenu } from "./ui";
 
-export function HistoryRow({ record }: { record: SessionRecord }) {
+export function HistoryRow({ record, first = false }: { record: SessionRecord; first?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <li className="group py-3">
-      <div className="flex items-center gap-3">
-        <AudioButton id={record.id} />
+    <li className="group">
+      {/* From the words, not the edge, and faint: rows held apart by space more than lines (Mac). */}
+      {!first && <div className="ml-11 h-px bg-rule opacity-60" />}
+      <div className="flex items-center gap-3 py-[11px]">
+        {/* Only where there is a recording: one kept past its days is gone, and a dead button lied. */}
+        {record.audioPath ? <AudioButton id={record.id} /> : <span className="h-8 w-8 shrink-0" />}
 
         <div className="min-w-0 flex-1">
           {record.finalText ? (
@@ -30,10 +34,11 @@ export function HistoryRow({ record }: { record: SessionRecord }) {
             <p className="truncate text-ink-soft">No text came back for this one.</p>
           )}
 
-          <p className="figure-num mt-1 flex items-center gap-3 text-xs text-ink-faint">
+          {/* Time, length and the app with its icon, as one line (Mac HistoryRow.details). */}
+          <p className="figure-num mt-1 flex min-w-0 items-center gap-3 text-xs text-ink-faint">
             <span>{formatTime(record.createdAt)}</span>
             <span>{formatDuration(record.audioMs ?? 0)}</span>
-            {record.context.appName && <span className="truncate">{record.context.appName}</span>}
+            <AppLabel appId={record.context.appId} stored={record.context.appName} />
             {/* The internal error stays in the log: what the person needs is that it was not tidied. */}
             {record.rewriteError && (
               <span className="truncate font-medium text-accent-ink">Not cleaned up</span>
@@ -41,9 +46,12 @@ export function HistoryRow({ record }: { record: SessionRecord }) {
           </p>
         </div>
 
-        {/* Copy stays visible: it is the action people came to this list for. */}
-        <CopyButton text={record.finalText} />
-        <RowMenu record={record} />
+        {/* Copy and more show on the row pointed at, as a calm list does; their place is kept so
+            nothing shifts, and a keyboard reaching them shows them too (Mac c6ed4fe). */}
+        <div className="flex w-[68px] shrink-0 justify-end gap-3 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[role=menu]]:opacity-100">
+          <CopyButton text={record.finalText} />
+          <RowMenu record={record} />
+        </div>
       </div>
     </li>
   );

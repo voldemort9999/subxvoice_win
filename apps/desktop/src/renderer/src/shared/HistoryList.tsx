@@ -10,7 +10,16 @@ import { Empty, FIELD, MoreMenu } from "./ui";
  * Everything said, by day, searchable — on Home, rather than on a page of its
  * own that repeated what Home already showed.
  */
-export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hotkey: string }) {
+export function HistoryList({
+  records,
+  hotkey,
+  thisDeviceOnly = false,
+}: {
+  records: SessionRecord[];
+  hotkey: string;
+  /** Other devices dictated on the account too: the heading says this list is this PC's. */
+  thisDeviceOnly?: boolean;
+}) {
   const [query, setQuery] = useState("");
   // Older dictations join 30 at a time as the list's end comes into view; a search shows every match
   // at once (the Mac app, cfec732, fadb9bf).
@@ -50,7 +59,7 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-4">
-        <h2 className="mr-auto text-[18px]">History</h2>
+        <h2 className="mr-auto text-[18px]">{thisDeviceOnly ? "History on this PC" : "History"}</h2>
         <label className="relative w-64 max-w-full">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <input
@@ -90,9 +99,9 @@ export function HistoryList({ records, hotkey }: { records: SessionRecord[]; hot
           {[...groups].map(([day, dayRecords]) => (
             <section key={day}>
               <h3 className="mb-2 text-[14px] font-medium text-ink-faint">{dayLabel(day)}</h3>
-              <ul className="divide-y divide-rule rounded-[16px] border border-rule bg-paper px-4">
-                {dayRecords.map((record) => (
-                  <HistoryRow key={record.id} record={record} />
+              <ul className="rounded-[16px] border border-rule bg-paper px-4">
+                {dayRecords.map((record, index) => (
+                  <HistoryRow key={record.id} record={record} first={index === 0} />
                 ))}
               </ul>
             </section>

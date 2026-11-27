@@ -28,9 +28,19 @@ export function useHistory(): SessionRecord[] | null {
 
 /** The daily totals (words, speaking time, dictations per day), re-read whenever the history changes. */
 export function useDayTotals(): Record<string, DayTotal> | null {
+  return useDays(() => window.subx.stats.days());
+}
+
+/** This PC's own day totals: the account's (above) add up every device signed in to it. */
+export function useDeviceDays(): Record<string, DayTotal> | null {
+  return useDays(() => window.subx.stats.thisDevice());
+}
+
+function useDays(read: () => Promise<Record<string, DayTotal>>): Record<string, DayTotal> | null {
   const [days, setDays] = useState<Record<string, DayTotal> | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `read` is a fixed call per hook.
   useEffect(() => {
-    const load = () => void window.subx.stats.days().then(setDays);
+    const load = () => void read().then(setDays);
     load();
     // This Mac's own count changes with its history; the account's with every device's dictations.
     const offHistory = window.subx.history.onChanged(load);

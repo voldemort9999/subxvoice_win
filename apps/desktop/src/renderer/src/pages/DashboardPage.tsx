@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { dayKey } from "../../../shared/day-key";
 import { formatCount, formatSpan } from "../shared/format";
 import { HistoryList } from "../shared/HistoryList";
-import { useDayTotals, useHistory, usePermissions } from "../shared/hooks";
+import { useDayTotals, useDeviceDays, useHistory, usePermissions } from "../shared/hooks";
 import { BookIcon, CheckIcon, MicIcon, PaletteIcon, ShieldIcon } from "../shared/icons";
 import type { PageId } from "../shared/Sidebar";
 import { savedMsOf, speedOf, streakOfTotals, sumTotals } from "../shared/stats";
@@ -24,6 +24,7 @@ export function DashboardPage({
 }) {
   const records = useHistory();
   const days = useDayTotals();
+  const deviceDays = useDeviceDays();
   const permissions = usePermissions();
   const [words, setWords] = useState<DictionaryEntry[] | null>(null);
   useEffect(() => void window.subx.dictionary.list().then(setWords), []);
@@ -37,6 +38,11 @@ export function DashboardPage({
   const speed = speedOf(total);
   // Today beside the total: the day's own progress is what moves while they work.
   const today = days[dayKey(Date.now())];
+  // Other devices signed in to the account dictated too: only then is it said which figures are
+  // everyone's and which this PC's (Mac 5628e76). With one device they are the same.
+  const device = sumTotals(deviceDays ?? {});
+  const shared = total.dictations > device.dictations;
+  const deviceToday = deviceDays?.[dayKey(Date.now())];
 
   return (
     <div className="space-y-10">
@@ -51,25 +57,37 @@ export function DashboardPage({
         </Notice>
       )}
 
-      <section
-        aria-label="Your numbers"
-        className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-[18px] border border-rule bg-paper px-7 py-6 md:grid-cols-5"
-      >
-        <Stat
-          label="Dictated words"
-          value={formatCount(total.words)}
-          unit={total.words === 1 ? "word" : "words"}
-        />
-        <Stat
-          label="Today"
-          value={formatCount(today?.words ?? 0)}
-          unit={today?.words === 1 ? "word" : "words"}
-          note={`${formatCount(today?.dictations ?? 0)} ${today?.dictations === 1 ? "dictation" : "dictations"}`}
-        />
-        <Stat label="Time saved" value={formatSpan(savedMsOf(total))} />
-        <Stat label="Day streak" value={String(streak)} unit={streak === 1 ? "day" : "days"} />
-        <Stat label="Average speed" value={speed ? String(speed) : "-"} unit={speed ? "wpm" : undefined} />
-      </section>
+      <div className="space-y-3">
+        <section
+          aria-label="Your numbers"
+          className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-[18px] border border-rule bg-paper px-7 py-6 md:grid-cols-5"
+        >
+          <Stat
+            label="Dictated words"
+            value={formatCount(total.words)}
+            unit={total.words === 1 ? "word" : "words"}
+            notes={shared ? [`${formatCount(device.words)} on this PC`] : []}
+          />
+          <Stat
+            label="Today"
+            value={formatCount(today?.words ?? 0)}
+            unit={today?.words === 1 ? "word" : "words"}
+            notes={[
+              `${formatCount(today?.dictations ?? 0)} ${today?.dictations === 1 ? "dictation" : "dictations"}`,
+              ...(shared ? [`${formatCount(deviceToday?.dictations ?? 0)} on this PC`] : []),
+            ]}
+          />
+          <Stat label="Time saved" value={formatSpan(savedMsOf(total))} />
+          <Stat label="Day streak" value={String(streak)} unit={streak === 1 ? "day" : "days"} />
+          <Stat label="Average speed" value={speed ? String(speed) : "-"} unit={speed ? "wpm" : undefined} />
+        </section>
+        {shared && (
+          <p className="px-1 text-[13px] text-ink-soft">
+            Your account is signed in on more than one device, so these counts add up all of them. The history
+            below is this PC's.
+          </p>
+        )}
+      </div>
 
       <LearningCenter
         hotkey={hotkey}
@@ -82,12 +100,23 @@ export function DashboardPage({
         onNavigate={onNavigate}
       />
 
-      <HistoryList records={records} hotkey={hotkey} />
+      <HistoryList records={records} hotkey={hotkey} thisDeviceOnly={shared} />
     </div>
   );
 }
 
-function Stat({ label, value, unit, note }: { label: string; value: string; unit?: string; note?: string }) {
+function Stat({
+  label,
+  value,
+  unit,
+  notes = [],
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  /** A line each under the figure: what is everyone's, then this PC's when other devices count too. */
+  notes?: string[];
+}) {
   return (
     <div className="min-w-0">
       <p className="truncate text-ink-soft">{label}</p>
@@ -96,7 +125,11 @@ function Stat({ label, value, unit, note }: { label: string; value: string; unit
         {value}
         {unit && <span className="ml-1.5 font-sans text-[14px] font-normal text-ink-soft">{unit}</span>}
       </p>
-      {note && <p className="mt-0.5 truncate text-xs text-ink-soft">{note}</p>}
+      {notes.map((note) => (
+        <p key={note} className="mt-0.5 truncate text-[13px] text-ink-faint">
+          {note}
+        </p>
+      ))}
     </div>
   );
 }
