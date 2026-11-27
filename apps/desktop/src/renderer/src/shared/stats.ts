@@ -75,6 +75,8 @@ export function byDay(records: SessionRecord[], days: number): DayBucket[] {
 
 export interface AppBucket {
   name: string;
+  /** The app's id (its executable) from the first dictation into it, for its icon and full name. */
+  appId?: string;
   count: number;
   words: number;
 }
@@ -89,7 +91,7 @@ export function byApp(records: SessionRecord[], limit = Number.POSITIVE_INFINITY
   for (const record of records) {
     const name = record.context.appName;
     if (!name) continue;
-    const bucket = apps.get(name) ?? { name, count: 0, words: 0 };
+    const bucket = apps.get(name) ?? { name, appId: record.context.appId, count: 0, words: 0 };
     bucket.count++;
     bucket.words += wordCount(record.finalText);
     apps.set(name, bucket);

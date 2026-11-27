@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { dayKey } from "../../../shared/day-key";
+import { AppLabel } from "../shared/AppLabel";
 import { formatCount, formatSpan, formatWords } from "../shared/format";
-import { useDayTotals, useHistory } from "../shared/hooks";
+import { useDayTotals, useDeviceDays, useHistory } from "../shared/hooks";
 import {
   bestsOfTotals,
   byApp,
@@ -36,6 +37,7 @@ const RANGES: { value: Range; label: string }[] = [
 export function InsightsPage({ hotkey }: { hotkey: string }) {
   const records = useHistory();
   const totals = useDayTotals();
+  const deviceDays = useDeviceDays();
   const [range, setRange] = useState<Range>("30");
   const [dictionary, setDictionary] = useState<{ all: number; learned: number } | null>(null);
   useEffect(
@@ -78,6 +80,13 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
   const bests = { ...personalBests(records), ...bestsOfTotals(totals) };
   const best = longest(inRange);
   const pages = words / WORDS_PER_PAGE;
+  // Words this PC said in the period, when other devices on the account said some too (null when
+  // this PC is the only one: then every figure is simply theirs). The Mac's macWords, 5628e76.
+  const devicePeriod = sumTotals(deviceDays ?? {}, rangeStart(days));
+  const deviceWords = period.dictations > devicePeriod.dictations ? devicePeriod.words : null;
+  // Which app a word went to, and when, is known only on the PC that typed it.
+  const here = deviceWords !== null ? "On this PC" : null;
+  const appsLine = [here, apps.length > 1 ? `${apps.length} apps` : null].filter(Boolean).join(", ");
 
   return (
     <div className="space-y-10">
@@ -87,7 +96,8 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
             "Nothing said in this period."
           ) : (
             <>
-              You said <strong className="font-semibold">{formatWords(words)}</strong>
+              {deviceWords !== null ? "On all your devices, you said " : "You said "}
+              <strong className="font-semibold">{formatWords(words)}</strong>
               {pages >= 0.5 && (
                 <> (about {pages < 1.5 ? "a page" : `${Math.round(pages)} pages`} of a book)</>
               )}{" "}
@@ -99,7 +109,15 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
       </div>
 
       <Figures>
-        <Figure label="Words" value={formatCount(words)} note={`In ${days} days`} />
+        <Figure
+          label="Words"
+          value={formatCount(words)}
+          note={
+            deviceWords !== null
+              ? `In ${days} days, ${formatCount(deviceWords)} on this PC`
+              : `In ${days} days`
+          }
+        />
         <Figure label="Time saved" value={formatSpan(saved)} note="Against typing at 40 wpm" mark />
         {/* How often they spoke, and how much each time (the Mac app's Dictations). */}
         <Figure
@@ -129,11 +147,7 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
       <div className="grid gap-10 md:grid-cols-2">
         <Section
           title="Where your words went"
-          action={
-            apps.length > 1 ? (
-              <span className="text-[13px] text-ink-soft">{apps.length} apps</span>
-            ) : undefined
-          }
+          action={appsLine ? <span className="text-[13px] text-ink-soft">{appsLine}</span> : undefined}
         >
           {apps.length === 0 ? (
             <Empty>No app recorded yet for these dictations.</Empty>
@@ -142,7 +156,10 @@ export function InsightsPage({ hotkey }: { hotkey: string }) {
           )}
         </Section>
 
-        <Section title="Your rhythm">
+        <Section
+          title="Your rhythm"
+          action={here ? <span className="text-[13px] text-ink-soft">{here}</span> : undefined}
+        >
           {habit && (
             <p className="mb-3">
               <span className="font-semibold">{habit.label}</span>
@@ -264,8 +281,8 @@ function DailyBars({ buckets }: { buckets: DayBar[] }) {
                 <p className="figure-num mt-0.5 text-ink">{formatWords(day.words)}</p>
                 <p className="figure-num text-ink-soft">
                   {formatCount(day.dictations)} {day.dictations === 1 ? "dictation" : "dictations"}
-                  {day.ms > 0 && <> · {formatSpan(day.ms)} speaking</>}
                 </p>
+                {day.ms > 0 && <p className="figure-num text-ink-soft">{formatSpan(day.ms)} speaking</p>}
               </>
             ) : (
               <p className="mt-0.5 text-ink-soft">Nothing dictated</p>
@@ -353,30 +370,31 @@ function HourStrip({ hours }: { hours: number[] }) {
 }
 
 /**
- * Every app the words went into, one line each (name, bar, words), ranked by words: six in sight and
- * the rest scrolling inside the list, so the page keeps its size (the Mac app, 92bf3ca, 23bbb63).
- * While more is below, the last line fades and the scroll bar stays.
+ * Every app the words went into, one line each (icon and name, bar, words), ranked by words: six in
+ * sight and the rest scrolling inside the list, so the page keeps its size (the Mac app's AppsList,
+ * 92bf3ca, 23bbb63). Names a fixed width so the bars start together; while more is below, the last
+ * line fades and the scroll bar stays.
  */
-function AppsList({ apps }: { apps: { name: string; words: number }[] }) {
+function AppsList({ apps }: { apps: { name: string; appId?: string; words: number }[] }) {
   const [more, setMore] = useState(apps.length > 6);
-  const top = apps[0]?.words || 1;
+  const top = Math.max(1, ...apps.map((app) => app.words));
+  const rows = Math.min(apps.length, 6);
   return (
     <ul
       onScroll={(event) => {
         const list = event.currentTarget;
         setMore(list.scrollTop + list.clientHeight < list.scrollHeight - 2);
       }}
-      className={`m-0 max-h-[204px] list-none space-y-0 overflow-y-auto p-0 pr-2 ${
-        more ? "[mask-image:linear-gradient(to_bottom,black_80%,transparent)]" : ""
-      } ${apps.length > 6 ? "[scrollbar-gutter:stable]" : ""}`}
+      style={{ maxHeight: rows * 20 + (rows - 1) * 10 }}
+      className={`m-0 flex list-none flex-col gap-[10px] overflow-y-auto p-0 ${
+        apps.length > 6 ? "pr-4 [scrollbar-gutter:stable]" : ""
+      } ${more ? "[mask-image:linear-gradient(to_bottom,black_75%,transparent)]" : ""}`}
     >
       {apps.map((app) => (
-        <li key={app.name} className="grid h-[34px] grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3">
-          <span className="truncate font-semibold">{app.name}</span>
-          <Track percent={Math.max(3, (app.words / top) * 100)} tone="bg-ink-soft" />
-          <span className="figure-num min-w-[4.5rem] text-right text-xs text-ink-soft">
-            {formatWords(app.words)}
-          </span>
+        <li key={app.name} className="grid h-5 shrink-0 grid-cols-[150px_1fr_44px] items-center gap-3">
+          <AppLabel appId={app.appId} stored={app.name} className="text-[13px] font-medium text-ink" />
+          <Track percent={Math.max(2, (app.words / top) * 100)} tone="bg-ink-soft" />
+          <span className="figure-num text-right text-xs text-ink-soft">{formatCount(app.words)}</span>
         </li>
       ))}
     </ul>

@@ -95,7 +95,7 @@ describe("grouping for the charts", () => {
 
   it("ranks apps by the words that went into them", () => {
     const apps = byApp([
-      record({ context: { appName: "Code" }, finalText: "a b" }),
+      record({ context: { appName: "Code", appId: "C:\\VS Code\\Code.exe" }, finalText: "a b" }),
       record({ context: { appName: "Code" }, finalText: "c" }),
       record({ context: { appName: "chrome" }, finalText: "d e f g" }),
       // No app name: macOS cannot read one yet, and an "Unknown" bar would look like a bug.
@@ -104,6 +104,8 @@ describe("grouping for the charts", () => {
     expect(apps.map((app) => app.name)).toEqual(["chrome", "Code"]);
     expect(apps[1]?.count).toBe(2);
     expect(apps[1]?.words).toBe(3);
+    // The executable comes along, so the list can show the app's icon and Windows' name for it.
+    expect(apps[1]?.appId).toBe("C:\\VS Code\\Code.exe");
   });
 
   it("buckets by hour across the whole day", () => {

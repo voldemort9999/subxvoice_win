@@ -33,7 +33,9 @@ export class WinSystem {
     const name = await this.worker.run(
       `if (Test-Path -LiteralPath ${literal}) { [System.Diagnostics.FileVersionInfo]::GetVersionInfo(${literal}).FileDescription } else { "" }`,
     );
-    return typeof name === "string" && name.trim() ? name.trim() : null;
+    // Some describe themselves by their file name (Windows 11's Notepad says "Notepad.exe").
+    const plain = typeof name === "string" ? name.trim().replace(/\.exe$/i, "") : "";
+    return plain || null;
   }
 
   /** What kind of element has the focus (never its text); null when nothing has. */
