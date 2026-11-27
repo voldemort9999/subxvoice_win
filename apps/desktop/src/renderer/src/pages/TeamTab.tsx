@@ -168,7 +168,11 @@ export function TeamTab({ onOpenPlan }: { onOpenPlan: () => void }) {
         <TeamWords
           words={team.words}
           onAdd={(word) => act(() => window.subx.team.words({ upsert: [{ word, misheardAs: [] }] }))}
-          onRemove={(word) => act(() => window.subx.team.words({ remove: [word] }))}
+          onRemove={(word) => {
+            // Asked first: it goes for everyone in the team (Mac TeamTab).
+            if (confirm(`Remove "${word}" for everyone in ${team.name}?`))
+              void act(() => window.subx.team.words({ remove: [word] }));
+          }}
         />
       </Field>
       {team.role !== "owner" && (

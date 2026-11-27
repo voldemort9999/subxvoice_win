@@ -65,14 +65,26 @@ export function DictionaryPage() {
     };
   }, [load]);
 
-  async function remove(entryWord: string) {
-    await window.subx.dictionary.remove(entryWord);
+  async function remove(entry: DictionaryEntry) {
+    // Asked first, as the Mac does (beba6ee): a click on a row's end once removed a word.
+    const learned = entry.source === "learned";
+    const sure = window.confirm(
+      `Remove "${entry.word}" from your dictionary?${learned ? " Fixing it again will not add it back." : ""}`,
+    );
+    if (!sure) return;
+    await window.subx.dictionary.remove(entry.word);
     load();
   }
 
   async function save(before: DictionaryEntry, next: { word: string; misheardAs: string[] }) {
     // The new name goes in before the old one goes: a refused new name used to lose both (Mac 7210c8c).
-    await window.subx.dictionary.upsert({ ...before, ...next });
+    try {
+      await window.subx.dictionary.upsert({ ...before, ...next });
+    } catch (error) {
+      // Said, not swallowed: the edit is not saved (a word too long, too many spellings).
+      window.alert(error instanceof Error ? error.message : "Couldn't save that word. Try again.");
+      return;
+    }
     if (next.word !== before.word) await window.subx.dictionary.remove(before.word, true);
     setEditing(null);
     load();
@@ -193,7 +205,7 @@ export function DictionaryPage() {
                   entry={entry}
                   used={used.get(entry.word) ?? 0}
                   onEdit={() => setEditing(entry.word)}
-                  onRemove={() => remove(entry.word)}
+                  onRemove={() => remove(entry)}
                 />
               ),
             )}
@@ -276,7 +288,7 @@ function WordRow({
           <Change from={fixes} to={entry.word} />
           {!unknown && (
             <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase ${
+              className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${
                 learned ? "bg-accent/15 text-accent-ink" : "bg-well text-ink-soft"
               }`}
             >
@@ -293,13 +305,9 @@ function WordRow({
           {when ? ` · ${when}` : ""}
           {` · ${used === 0 ? "not typed yet" : `typed ${used} ${used === 1 ? "time" : "times"}`}`}
         </p>
-        {entry.misheardAs.length > 0 && (
-          <p className="text-xs text-ink-faint">
-            Replaced wherever they appear: <span className="spoken">{entry.misheardAs.join(", ")}</span>
-          </p>
-        )}
       </div>
-      <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {/* Faint until pointed at, never invisible: an invisible button could still be clicked (Mac). */}
+      <div className="flex shrink-0 gap-1 opacity-35 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <IconButton icon={PencilIcon} label={`Edit ${entry.word}`} onClick={onEdit} />
         <IconButton
           icon={TrashIcon}
