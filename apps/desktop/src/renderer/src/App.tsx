@@ -7,6 +7,7 @@ import { InsightsPage } from "./pages/InsightsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { SettingsPanel } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
+import { stopPlaying } from "./shared/AudioButton";
 import { Contours } from "./shared/effects/Contours";
 import { useAccount, useAppInfo, useBilling, useUsage } from "./shared/hooks";
 import { Launch, useLaunchScene } from "./shared/Launch";
@@ -20,8 +21,14 @@ const TITLES: Record<PageId, string> = {
   settings: "Settings",
 };
 
+/** The pages, in the sidebar's order; Settings is a panel over Home, never one of them. */
+const PAGES: PageId[] = ["dashboard", "dictionary", "insights"];
+
 export function App() {
   const [page, setPage] = useState<PageId>("dashboard");
+  // Pages opened so far, each built once and kept with its own scroll: coming back costs nothing
+  // and finds it where it was (the Mac's Shell, 2026-11-23).
+  const [opened, setOpened] = useState<ReadonlySet<PageId>>(() => new Set(["dashboard"]));
   // Bumped to open Settings afresh on the section asked for, even when Settings is already open.
   const [settingsVisit, setSettingsVisit] = useState(0);
   const account = useAccount();
@@ -44,6 +51,8 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useWindowChrome();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on each change of page, by design.
+  useEffect(() => stopPlaying(), [page]);
   // "Change Languages…" and the like in the menu bar.
   useEffect(
     () =>
@@ -61,6 +70,7 @@ export function App() {
   if (!info) return <div className="h-full bg-stage" />;
   // Settings is a panel over Home, never a page of its own (the Mac app's Shell.swift).
   const shown: PageId = page === "settings" ? "dashboard" : page;
+  if (!opened.has(shown)) setOpened(new Set([...opened, shown]));
   if (launch.show) return <Launch onDone={launch.done} />;
   if (!account) return <div className="h-full bg-stage" />;
   if (!account.signedIn) return <SignInPage lastGoogle={account.lastGoogle} />;
@@ -120,14 +130,25 @@ export function App() {
             )}
           </header>
 
-          <main className="scroll-area relative flex-1 overflow-y-auto">
-            {/* Keyed by page so each one arrives with a short rise, answering the click that chose it. */}
-            <div key={shown} className="animate-arrive mx-auto max-w-5xl px-8 pt-4 pb-10">
-              {shown === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
-              {page === "insights" && <InsightsPage hotkey={hotkey} />}
-              {page === "dictionary" && <DictionaryPage />}
-            </div>
-          </main>
+          <div className="relative min-h-0 flex-1">
+            {PAGES.filter((id) => opened.has(id)).map((id) => (
+              // Hidden, not removed: a page kept this way holds its scroll. The one shown rises in
+              // quickly (the class is added again each time it is shown), so the click answers at once.
+              <main
+                key={id}
+                aria-hidden={id !== shown}
+                className={`scroll-area absolute inset-0 overflow-y-auto ${
+                  id === shown ? "z-10" : "pointer-events-none invisible"
+                }`}
+              >
+                <div className={`mx-auto max-w-5xl px-8 pt-4 pb-10 ${id === shown ? "animate-arrive" : ""}`}>
+                  {id === "dashboard" && <DashboardPage hotkey={hotkey} onNavigate={setPage} />}
+                  {id === "insights" && <InsightsPage hotkey={hotkey} />}
+                  {id === "dictionary" && <DictionaryPage />}
+                </div>
+              </main>
+            ))}
+          </div>
         </div>
         {page === "settings" && (
           <SettingsPanel key={settingsVisit} info={info} onClose={() => setPage("dashboard")} />

@@ -61,8 +61,9 @@ export function Sidebar({
                 onClick={() => onNavigate(id)}
                 aria-current={active ? "page" : undefined}
                 className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-[15px] transition-colors ${
+                  // Where you are, in the brand blue at a whisper: the one place colour sits at rest (Mac).
                   active
-                    ? "bg-side-rule font-medium text-side-ink shadow-[var(--side-inset)]"
+                    ? "bg-side-active font-medium text-side-accent"
                     : "text-side-soft hover:bg-side-rule/60 hover:text-side-ink"
                 }`}
               >
@@ -126,10 +127,7 @@ function PlanCard({
   return (
     <div className="px-1.5">
       <div className="flex items-baseline justify-between gap-2 text-[13px]">
-        <span className="truncate text-side-soft">
-          {name}
-          {trialDays !== null ? ` trial, ${trialDays} day${trialDays === 1 ? "" : "s"} left` : ""}
-        </span>
+        <span className="truncate text-side-soft">{name}</span>
         <span className="figure-num shrink-0 font-medium">
           {!limited
             ? "Unlimited"
@@ -140,6 +138,12 @@ function PlanCard({
               : `${left}% left`}
         </span>
       </div>
+      {/* On a line of its own: beside the plan's name it was cut off in the sidebar's width (Mac). */}
+      {trialDays !== null && (
+        <p className="mt-0.5 text-xs text-side-soft">
+          {trialDays} day{trialDays === 1 ? "" : "s"} left in your trial
+        </p>
+      )}
       {limited && (
         <span className="mt-2 block h-1 overflow-hidden rounded-full bg-side-rule" aria-hidden="true">
           <span className="block h-full rounded-full bg-side-accent" style={{ width: `${left}%` }} />

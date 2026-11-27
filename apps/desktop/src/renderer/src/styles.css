@@ -110,6 +110,11 @@
   --well: color-mix(in srgb, var(--ink) 6%, transparent);
   --side-soft: color-mix(in srgb, var(--side-ink) 74%, transparent);
   --side-rule: color-mix(in srgb, var(--side-ink) 12%, var(--side));
+  /* The current page in the sidebar: the blue at a whisper, a little more on Dark (Mac Shell). */
+  --side-active: color-mix(in srgb, var(--side-accent) 9%, transparent);
+}
+:root[data-theme="dark"] {
+  --side-active: color-mix(in srgb, var(--side-accent) 14%, transparent);
 }
 
 @theme inline {
@@ -118,6 +123,7 @@
   --text-xs--line-height: 1.5;
   --color-page: var(--page);
   --color-paper: var(--paper);
+  --color-side-active: var(--side-active);
   --color-sunk: var(--sunk);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);

@@ -5,6 +5,11 @@ import { PauseIcon, PlayIcon } from "./icons";
 /** One recording plays at a time (the Mac app, fbeacae): starting one pauses the one before. */
 let playingNow: HTMLAudioElement | null = null;
 
+/** Whatever plays stops when another page is opened, as it did when pages were left (Mac Shell). */
+export function stopPlaying(): void {
+  playingNow?.pause();
+}
+
 export function AudioButton({ id }: { id: string }) {
   const [playing, setPlaying] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null);
