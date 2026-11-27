@@ -9,10 +9,15 @@ export const PRELOAD_PATH = join(__dirname, "../preload/index.js");
  * launched it could load its own page into our window, with the preload bridge (found unpacking
  * the published 0.0.1, 2026-11-19).
  */
-export function loadPage(window: BrowserWindow, page: "index.html" | "pill.html"): void {
+export function loadPage(
+  window: BrowserWindow,
+  page: "index.html" | "pill.html",
+  query: Record<string, string> = {},
+): void {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}`);
+    const search = new URLSearchParams(query).toString();
+    window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}${search ? `?${search}` : ""}`);
   } else {
-    window.loadFile(join(__dirname, "../renderer", page));
+    window.loadFile(join(__dirname, "../renderer", page), { query });
   }
 }

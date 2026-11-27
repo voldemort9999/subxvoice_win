@@ -47,6 +47,7 @@ const api: SubxApi = {
     openRecordingsFolder: () => ipcRenderer.invoke(IPC.openRecordingsFolder),
     onNavigate: (listener) => subscribe(IPC.navigate, listener),
     chrome: (colors) => ipcRenderer.send(IPC.windowChrome, colors),
+    openPage: (to) => ipcRenderer.send(IPC.appOpenPage, to),
   },
   update: {
     state: () => ipcRenderer.invoke(IPC.updateState),
@@ -78,6 +79,24 @@ const api: SubxApi = {
   screen: {
     last: () => ipcRenderer.invoke(IPC.screenLast),
     pickApps: () => ipcRenderer.invoke(IPC.screenPickApp),
+  },
+  notes: {
+    list: (kind) => ipcRenderer.invoke(IPC.notesList, kind),
+    save: (kind, note) => ipcRenderer.invoke(IPC.notesSave, kind, note),
+    remove: (kind, id) => ipcRenderer.invoke(IPC.notesRemove, kind, id),
+    onChanged: (listener) => {
+      const wrapped = (_event: unknown, kind: "draft" | "script") => listener(kind);
+      ipcRenderer.on(IPC.notesChanged, wrapped);
+      return () => void ipcRenderer.removeListener(IPC.notesChanged, wrapped);
+    },
+  },
+  drafts: {
+    open: (id) => ipcRenderer.send(IPC.draftsOpen, id),
+    onTab: (listener) => {
+      const wrapped = (_event: unknown, id: string) => listener(id);
+      ipcRenderer.on(IPC.draftsTab, wrapped);
+      return () => void ipcRenderer.removeListener(IPC.draftsTab, wrapped);
+    },
   },
   snippets: {
     list: () => ipcRenderer.invoke(IPC.snippetsList),

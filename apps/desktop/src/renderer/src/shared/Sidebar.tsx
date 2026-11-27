@@ -2,11 +2,11 @@ import { SidebarTop } from "@platform/Chrome";
 import type { ComponentType } from "react";
 import type { AccountState, Billing, Usage } from "../../../shared/ipc";
 import { formatSpan } from "./format";
-import { BookIcon, ChartIcon, GearIcon, HomeIcon, SnippetIcon } from "./icons";
+import { BookIcon, ChartIcon, GearIcon, HomeIcon, PencilIcon, SnippetIcon } from "./icons";
 import { Mark } from "./Mark";
 import { ProfileMenu } from "./ProfileMenu";
 
-export type PageId = "dashboard" | "insights" | "dictionary" | "snippets" | "settings";
+export type PageId = "dashboard" | "insights" | "dictionary" | "snippets" | "drafts" | "settings";
 
 interface NavItem {
   id: PageId;
@@ -24,6 +24,7 @@ const PAGES: NavItem[] = [
   { id: "dictionary", label: "Dictionary", icon: BookIcon },
   { id: "snippets", label: "Snippets", icon: SnippetIcon },
   { id: "insights", label: "Insights", icon: ChartIcon },
+  { id: "drafts", label: "Drafts", icon: PencilIcon },
 ];
 
 export function Sidebar({

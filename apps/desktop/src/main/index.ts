@@ -36,6 +36,8 @@ import {
   type LastScreen,
   type MicrophoneOption,
   type Navigation,
+  type Note,
+  type NoteKind,
   type PermissionStatus,
   type PillState,
   type VoiceSettings,
@@ -52,6 +54,7 @@ import { DictationController } from "./dictation";
 import { hotkeyRefusal } from "./hotkey-choice";
 import { EditLearner } from "./learner";
 import { nativeMic, PillMic } from "./mic";
+import { NotesStore } from "./notes";
 import { PillWindow } from "./pill";
 import { createPlatform } from "./platform";
 import { apiUrl, clientHeaders, createStt, devToken, loadDevEnv } from "./providers";
@@ -352,6 +355,82 @@ function notifyHistoryChanged(): void {
   mainWindow?.webContents.send(IPC.historyChanged);
 }
 
+/** Drafts and scripts, the signed-in account's. */
+let notes: Record<NoteKind, NotesStore> | null = null;
+function notesOf(kind: unknown): NotesStore {
+  if (!notes || (kind !== "draft" && kind !== "script")) throw new Error("Unknown kind of note.");
+  return notes[kind];
+}
+
+function notifyNotesChanged(kind: NoteKind): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.notesChanged, kind);
+}
+
+/** A note from the renderer, checked before it is stored. */
+function assertNote(value: unknown): Partial<Note> & { id: string } {
+  const note = value as Record<string, unknown>;
+  if (!note || typeof note !== "object" || typeof note.id !== "string" || note.id.length > 100)
+    throw new Error("That note could not be read.");
+  return {
+    id: note.id,
+    ...(typeof note.text === "string" ? { text: note.text } : {}),
+    ...(typeof note.pinned === "boolean" ? { pinned: note.pinned } : {}),
+    ...(note.settings && typeof note.settings === "object"
+      ? { settings: note.settings as Record<string, unknown> }
+      : {}),
+  };
+}
+
+let draftsWindow: BrowserWindow | null = null;
+/** Where the drafts window was left, so it opens there again (the Mac's frame autosave). */
+const draftsPlace = new JsonFile<Electron.Rectangle | null>(
+  () => join(app.getPath("userData"), "drafts-window.json"),
+  null,
+);
+
+/**
+ * Drafts are written in a window of their own, beside whatever app the person is in, not inside the
+ * dashboard (the Mac's DraftWindow, c7ec191): several open as tabs, remembered when it closes. It is
+ * destroyed on close, like the dashboard, so nothing keeps drawing in the background.
+ */
+function openDraftsWindow(tab: string): void {
+  const show = () => draftsWindow?.webContents.send(IPC.draftsTab, tab);
+  if (draftsWindow && !draftsWindow.isDestroyed()) {
+    if (draftsWindow.isMinimized()) draftsWindow.restore();
+    draftsWindow.show();
+    draftsWindow.focus();
+    show();
+    return;
+  }
+  const window = new BrowserWindow({
+    width: 860,
+    height: 580,
+    minWidth: 520,
+    minHeight: 360,
+    show: false,
+    title: "Drafts",
+    ...(platform.os === "mac"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#24221f", symbolColor: "#e8e5de", height: TITLE_BAR_HEIGHT },
+        }),
+    webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
+  });
+  draftsWindow = window;
+  if (platform.os !== "mac") window.removeMenu();
+  void draftsPlace.read().then((place) => {
+    if (place && !window.isDestroyed()) window.setBounds(place);
+  });
+  window.on("ready-to-show", () => window.show());
+  window.on("close", () => void draftsPlace.write(window.getBounds()));
+  window.on("closed", () => {
+    if (draftsWindow === window) draftsWindow = null;
+  });
+  window.webContents.once("did-finish-load", show);
+  loadPage(window, "index.html", { window: "drafts" });
+}
+
 function notifySnippetsChanged(): void {
   mainWindow?.webContents.send(IPC.snippetsChanged);
 }
@@ -497,6 +576,10 @@ async function start(): Promise<void> {
   );
   const dictionary = new JsonDictionaryStore(() => join(accountDir, "dictionary.json"));
   const snippets = new SnippetStore(() => join(accountDir, "snippets.json"));
+  notes = {
+    draft: new NotesStore(() => join(accountDir, "drafts.json")),
+    script: new NotesStore(() => join(accountDir, "scripts.json")),
+  };
 
   const switchAccountData = async (userId: string | null) => {
     // The account being left was signed in here until now: its 30 days start today. (Not the
@@ -512,6 +595,10 @@ async function start(): Promise<void> {
     dictionary.forget();
     snippets.forget();
     snippetOffer = null;
+    notes?.draft.forget();
+    notes?.script.forget();
+    // Another account's drafts must not stay on screen.
+    draftsWindow?.close();
     voice.forget();
     learner.forget();
     // Built now, in the background, so the first dictation does not wait for it.
@@ -824,6 +911,25 @@ async function start(): Promise<void> {
     };
     const picked = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
     return picked.canceled ? [] : picked.filePaths;
+  });
+  handle(IPC.notesList, (_event, kind: unknown) => notesOf(kind).list());
+  handle(IPC.notesSave, async (_event, kind: unknown, note: unknown) => {
+    const saved = await notesOf(kind).save(assertNote(note));
+    notifyNotesChanged(kind as NoteKind);
+    return saved;
+  });
+  handle(IPC.notesRemove, async (_event, kind: unknown, id: unknown) => {
+    if (typeof id === "string") await notesOf(kind).remove(id);
+    notifyNotesChanged(kind as NoteKind);
+  });
+  listen(IPC.appOpenPage, (_event, to: unknown) => {
+    const page = (to as Navigation | null)?.page;
+    if (typeof page !== "string") return;
+    const script = (to as Navigation).script;
+    openMainWindow({ page, ...(typeof script === "string" ? { script } : {}) });
+  });
+  listen(IPC.draftsOpen, (_event, id: unknown) => {
+    if (typeof id === "string") openDraftsWindow(id);
   });
   handle(IPC.snippetsList, () => snippets.list());
   handle(IPC.snippetsSave, async (_event, item: unknown) => {

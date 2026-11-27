@@ -53,6 +53,17 @@ export const IPC = {
   screenLast: "screen:last",
   /** Choose an app (an .exe) the screen is never read in. */
   screenPickApp: "screen:pick-app",
+  notesList: "notes:list",
+  notesSave: "notes:save",
+  notesRemove: "notes:remove",
+  /** Drafts or scripts changed (`kind` with it): every window showing them reads them again. */
+  notesChanged: "notes:changed",
+  /** Brings the dashboard forward on a page. */
+  appOpenPage: "app:open-page",
+  /** Opens the drafts window on a draft, or on a new tab ("new"). */
+  draftsOpen: "drafts:open",
+  /** Main → the drafts window: show this tab ("new": a new one). */
+  draftsTab: "drafts:tab",
   snippetsList: "snippets:list",
   snippetsSave: "snippets:save",
   snippetsRemove: "snippets:remove",
@@ -143,6 +154,20 @@ export interface AppLook {
   name: string;
   /** A data: URL of the app's icon, "" when it has none. */
   icon: string;
+}
+
+/** Drafts (drafts.json) and teleprompter scripts (scripts.json): kept on this PC, per account. */
+export type NoteKind = "draft" | "script";
+
+/** A draft or a script. A script also keeps its own settings (how it moves, text size...). */
+export interface Note {
+  id: string;
+  text: string;
+  createdAt?: number;
+  updatedAt?: number;
+  pinned?: boolean;
+  /** A script's own settings (TeleprompterPage); unread by anything else. */
+  settings?: Record<string, unknown>;
 }
 
 /** A snippet as kept (snippets.json): what is said, what goes in, how often it went in. */
@@ -422,8 +447,18 @@ export type MicCommand = "start" | "stop";
 
 /** The main process sending the dashboard somewhere: a page, and for Settings a section of it. */
 export interface Navigation {
-  page: "dashboard" | "insights" | "dictionary" | "settings";
+  page:
+    | "dashboard"
+    | "today"
+    | "insights"
+    | "dictionary"
+    | "snippets"
+    | "teleprompter"
+    | "drafts"
+    | "settings";
   tab?: string;
+  /** Teleprompter: the script to open (one just sent from a draft). */
+  script?: string;
 }
 
 /**
@@ -513,6 +548,8 @@ export interface SubxApi {
     onNavigate(listener: (to: Navigation) => void): () => void;
     /** Windows: the colour behind the window's own buttons, so the title bar is the app's. */
     chrome(colors: { color: string; symbol: string }): void;
+    /** Brings the dashboard forward on a page (from the drafts window). */
+    openPage(to: Navigation): void;
   };
   hotkey: {
     /**
@@ -568,6 +605,19 @@ export interface SubxApi {
     last(): Promise<LastScreen | null>;
     /** The executables picked in a file dialog, [] when cancelled. */
     pickApps(): Promise<string[]>;
+  };
+  notes: {
+    list(kind: NoteKind): Promise<Note[]>;
+    /** Only the fields given change; a new one keeps the id it was opened with. */
+    save(kind: NoteKind, note: Partial<Note> & { id: string }): Promise<Note>;
+    remove(kind: NoteKind, id: string): Promise<void>;
+    onChanged(listener: (kind: NoteKind) => void): () => void;
+  };
+  drafts: {
+    /** The drafts window, on this draft or a new tab. */
+    open(id: string | "new"): void;
+    /** In the drafts window: main asks for a tab to be shown. */
+    onTab(listener: (id: string) => void): () => void;
   };
   snippets: {
     list(): Promise<SnippetItem[]>;

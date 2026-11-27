@@ -15,6 +15,7 @@ import "@fontsource-variable/manrope";
 import "@fontsource-variable/noto-sans-devanagari";
 import { TitleStrip } from "@platform/Chrome";
 import { App } from "./App";
+import { DraftsWindow } from "./pages/DraftsWindow";
 import { applyStoredTheme } from "./shared/themes";
 import "./styles.css";
 
@@ -23,9 +24,12 @@ applyStoredTheme();
 const root = document.getElementById("root");
 if (!root) throw new Error("#root not found");
 
+// One bundle, two windows: the dashboard, and the drafts window (`?window=drafts`).
+const drafts = new URLSearchParams(location.search).get("window") === "drafts";
+
 createRoot(root).render(
   <StrictMode>
-    <App />
+    {drafts ? <DraftsWindow /> : <App />}
     {/* Over every screen (launch, sign-in, setup, the app): what the window is dragged by. */}
     <TitleStrip />
   </StrictMode>,
