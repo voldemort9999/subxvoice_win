@@ -60,6 +60,20 @@ export const IPC = {
   notesChanged: "notes:changed",
   /** Brings the dashboard forward on a page. */
   appOpenPage: "app:open-page",
+  /** Opens a teleprompter script in its own window. */
+  scriptOpen: "script:open",
+  /** Main → the script window: show this script. */
+  scriptShow: "script:show",
+  /** Starts the teleprompter on a script (its panel at the top of the screen). */
+  prompterStart: "prompter:start",
+  prompterStop: "prompter:stop",
+  /** Which script the teleprompter is running, to every window (null: none). */
+  prompterState: "prompter:state",
+  prompterRunning: "prompter:running",
+  /** The panel, once it is listening: the script it shows now. */
+  prompterCurrent: "prompter:current",
+  /** Main → the panel: the script to show and its settings (again when they change). */
+  prompterScript: "prompter:script",
   /** Opens the drafts window on a draft, or on a new tab ("new"). */
   draftsOpen: "drafts:open",
   /** Main → the drafts window: show this tab ("new": a new one). */
@@ -166,8 +180,29 @@ export interface Note {
   createdAt?: number;
   updatedAt?: number;
   pinned?: boolean;
-  /** A script's own settings (TeleprompterPage); unread by anything else. */
-  settings?: Record<string, unknown>;
+  /** A script's own settings (its window); unread by anything else. */
+  settings?: Partial<ScriptSettings>;
+}
+
+/** One script's own settings (the Mac's ScriptSettings): how it moves, its pace, text size, hiding. */
+export interface ScriptSettings {
+  /** Moves while the person speaks; otherwise only while Hold to move is held. */
+  withVoice: boolean;
+  /** With the voice: a nudge if it stays behind (more) or runs ahead (less), 0.7 to 1.4. */
+  keepUp: number;
+  /** How soft a voice it hears, 0 to 1. */
+  sensitivity: number;
+  /** Points: 16 small, 20 medium, 26 large. */
+  size: number;
+  /** Out of screen sharing, recordings and screenshots. */
+  hidden: boolean;
+}
+
+/** What the teleprompter's panel shows. */
+export interface PrompterScript {
+  id: string;
+  text: string;
+  settings: ScriptSettings;
 }
 
 /** A snippet as kept (snippets.json): what is said, what goes in, how often it went in. */
@@ -612,6 +647,22 @@ export interface SubxApi {
     save(kind: NoteKind, note: Partial<Note> & { id: string }): Promise<Note>;
     remove(kind: NoteKind, id: string): Promise<void>;
     onChanged(listener: (kind: NoteKind) => void): () => void;
+  };
+  prompter: {
+    /** Opens a script in its own window (its words, how it works, its settings, Start). */
+    openScript(id: string): void;
+    /** In the script window: main asks for a script to be shown. */
+    onShow(listener: (id: string) => void): () => void;
+    /** Runs the script on the panel at the top of the screen; false when it has no words. */
+    start(id: string): Promise<boolean>;
+    stop(): void;
+    /** The script running now, if any. */
+    running(): Promise<string | null>;
+    onState(listener: (running: string | null) => void): () => void;
+    /** In the panel: the script and its settings, now and whenever they change. */
+    onScript(listener: (script: PrompterScript) => void): () => void;
+    /** In the panel, at start: the script running now (a message sent before it listened is lost). */
+    current(): Promise<PrompterScript | null>;
   };
   drafts: {
     /** The drafts window, on this draft or a new tab. */

@@ -90,6 +90,16 @@ const api: SubxApi = {
       return () => void ipcRenderer.removeListener(IPC.notesChanged, wrapped);
     },
   },
+  prompter: {
+    openScript: (id) => ipcRenderer.send(IPC.scriptOpen, id),
+    onShow: (listener) => subscribe(IPC.scriptShow, listener),
+    start: (id) => ipcRenderer.invoke(IPC.prompterStart, id),
+    stop: () => ipcRenderer.send(IPC.prompterStop),
+    running: () => ipcRenderer.invoke(IPC.prompterRunning),
+    onState: (listener) => subscribe(IPC.prompterState, listener),
+    onScript: (listener) => subscribe(IPC.prompterScript, listener),
+    current: () => ipcRenderer.invoke(IPC.prompterCurrent),
+  },
   drafts: {
     open: (id) => ipcRenderer.send(IPC.draftsOpen, id),
     onTab: (listener) => {

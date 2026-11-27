@@ -16,6 +16,8 @@ import "@fontsource-variable/noto-sans-devanagari";
 import { TitleStrip } from "@platform/Chrome";
 import { App } from "./App";
 import { DraftsWindow } from "./pages/DraftsWindow";
+import { PrompterPanel } from "./prompter/Panel";
+import { ScriptWindow } from "./prompter/ScriptWindow";
 import { applyStoredTheme } from "./shared/themes";
 import "./styles.css";
 
@@ -24,13 +26,22 @@ applyStoredTheme();
 const root = document.getElementById("root");
 if (!root) throw new Error("#root not found");
 
-// One bundle, two windows: the dashboard, and the drafts window (`?window=drafts`).
-const drafts = new URLSearchParams(location.search).get("window") === "drafts";
+// One bundle, four windows: the dashboard, the drafts window, a script's window and the
+// teleprompter's panel (`?window=drafts|script|prompter`).
+const which = new URLSearchParams(location.search).get("window");
 
 createRoot(root).render(
   <StrictMode>
-    {drafts ? <DraftsWindow /> : <App />}
+    {which === "drafts" ? (
+      <DraftsWindow />
+    ) : which === "script" ? (
+      <ScriptWindow />
+    ) : which === "prompter" ? (
+      <PrompterPanel />
+    ) : (
+      <App />
+    )}
     {/* Over every screen (launch, sign-in, setup, the app): what the window is dragged by. */}
-    <TitleStrip />
+    {which !== "prompter" && <TitleStrip />}
   </StrictMode>,
 );

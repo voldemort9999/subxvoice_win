@@ -40,6 +40,7 @@ import {
   type NoteKind,
   type PermissionStatus,
   type PillState,
+  type ScriptSettings,
   type VoiceSettings,
 } from "../shared/ipc";
 import { isPillPlace, pillShownNow } from "../shared/pill-place";
@@ -376,7 +377,7 @@ function assertNote(value: unknown): Partial<Note> & { id: string } {
     ...(typeof note.text === "string" ? { text: note.text } : {}),
     ...(typeof note.pinned === "boolean" ? { pinned: note.pinned } : {}),
     ...(note.settings && typeof note.settings === "object"
-      ? { settings: note.settings as Record<string, unknown> }
+      ? { settings: note.settings as Partial<ScriptSettings> }
       : {}),
   };
 }
@@ -429,6 +430,146 @@ function openDraftsWindow(tab: string): void {
   });
   window.webContents.once("did-finish-load", show);
   loadPage(window, "index.html", { window: "drafts" });
+}
+
+let scriptWindow: BrowserWindow | null = null;
+const scriptPlace = new JsonFile<Electron.Rectangle | null>(
+  () => join(app.getPath("userData"), "script-window.json"),
+  null,
+);
+
+/**
+ * One teleprompter script in a window of its own, as a draft has (the Mac's ScriptWindow, c7daaab):
+ * its words on the left; how it works, that script's settings and Start on the right. Destroyed when
+ * closed; a script left empty is removed then (by the window, which knows what was typed).
+ */
+function openScriptWindow(id: string): void {
+  if (scriptWindow && !scriptWindow.isDestroyed()) {
+    if (scriptWindow.isMinimized()) scriptWindow.restore();
+    scriptWindow.show();
+    scriptWindow.focus();
+    scriptWindow.webContents.send(IPC.scriptShow, id);
+    return;
+  }
+  const window = new BrowserWindow({
+    width: 920,
+    height: 660,
+    minWidth: 640,
+    minHeight: 420,
+    show: false,
+    title: "Script",
+    ...(platform.os === "mac"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#24221f", symbolColor: "#e8e5de", height: TITLE_BAR_HEIGHT },
+        }),
+    webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
+  });
+  scriptWindow = window;
+  if (platform.os !== "mac") window.removeMenu();
+  void scriptPlace.read().then((place) => {
+    if (place && !window.isDestroyed()) window.setBounds(place);
+  });
+  window.on("ready-to-show", () => window.show());
+  window.on("close", () => void scriptPlace.write(window.getBounds()));
+  window.on("closed", () => {
+    if (scriptWindow === window) scriptWindow = null;
+  });
+  loadPage(window, "index.html", { window: "script", id });
+}
+
+/** The script the teleprompter runs now (its id), or null. */
+let prompting: string | null = null;
+let prompterWindow: BrowserWindow | null = null;
+/** The panel: wide enough for a line of a script, and its text area under its button band. */
+const PANEL = { width: 480, height: 160 };
+
+function prompterSettings(note: Note): ScriptSettings {
+  const own = (note.settings ?? {}) as Partial<ScriptSettings>;
+  return {
+    withVoice: own.withVoice === true,
+    keepUp: typeof own.keepUp === "number" ? own.keepUp : 1,
+    sensitivity: typeof own.sensitivity === "number" ? own.sensitivity : 0.5,
+    size: typeof own.size === "number" ? own.size : 20,
+    hidden: own.hidden !== false,
+  };
+}
+
+function showOnPanel(note: Note): void {
+  const settings = prompterSettings(note);
+  // Out of screen sharing, recordings and screenshots unless turned off (Windows: the window's
+  // display affinity, WDA_EXCLUDEFROMCAPTURE).
+  prompterWindow?.setContentProtection(settings.hidden);
+  prompterWindow?.webContents.send(IPC.prompterScript, { id: note.id, text: note.text, settings });
+}
+
+/**
+ * The teleprompter: the script rolls up in a dark panel at the top of the screen, in the middle,
+ * where a laptop's camera is, so the person reads while looking near the lens (the Mac hangs it from
+ * the notch, b3267e7). It takes no focus and no keys; it is paused, moved or closed with its own
+ * buttons. A script that is running is never changed under the reader: starting another stops it.
+ */
+function startPrompter(note: Note): void {
+  prompting = note.id;
+  const work = screen.getPrimaryDisplay().workArea;
+  const bounds = {
+    x: Math.round(work.x + (work.width - PANEL.width) / 2),
+    y: work.y,
+    width: PANEL.width,
+    height: PANEL.height,
+  };
+  if (!prompterWindow || prompterWindow.isDestroyed()) {
+    const window = new BrowserWindow({
+      ...bounds,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      focusable: false,
+      alwaysOnTop: true,
+      show: false,
+      backgroundColor: "#00000000",
+      webPreferences: { preload: PRELOAD_PATH, sandbox: true, contextIsolation: true },
+    });
+    prompterWindow = window;
+    window.setAlwaysOnTop(true, "screen-saver");
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.on("closed", () => {
+      if (prompterWindow === window) prompterWindow = null;
+      if (prompting) {
+        prompting = null;
+        notifyPrompter();
+      }
+    });
+    window.webContents.once("did-finish-load", () => {
+      showOnPanel(note);
+      window.showInactive();
+    });
+    loadPage(window, "index.html", { window: "prompter" });
+  } else {
+    prompterWindow.setBounds(bounds);
+    showOnPanel(note);
+    prompterWindow.showInactive();
+  }
+  notifyPrompter();
+}
+
+function stopPrompter(): void {
+  const window = prompterWindow;
+  prompting = null;
+  prompterWindow = null;
+  if (window && !window.isDestroyed()) window.close();
+  notifyPrompter();
+}
+
+function notifyPrompter(): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.prompterState, prompting);
 }
 
 function notifySnippetsChanged(): void {
@@ -597,8 +738,10 @@ async function start(): Promise<void> {
     snippetOffer = null;
     notes?.draft.forget();
     notes?.script.forget();
-    // Another account's drafts must not stay on screen.
+    // Another account's drafts and scripts must not stay on screen.
     draftsWindow?.close();
+    scriptWindow?.close();
+    stopPrompter();
     voice.forget();
     learner.forget();
     // Built now, in the background, so the first dictation does not wait for it.
@@ -916,7 +1059,27 @@ async function start(): Promise<void> {
   handle(IPC.notesSave, async (_event, kind: unknown, note: unknown) => {
     const saved = await notesOf(kind).save(assertNote(note));
     notifyNotesChanged(kind as NoteKind);
+    // The script running changed (its words, its settings): the panel shows it as it is now.
+    if (kind === "script" && saved.id === prompting) showOnPanel(saved);
     return saved;
+  });
+  listen(IPC.scriptOpen, (_event, id: unknown) => {
+    if (typeof id === "string") openScriptWindow(id);
+  });
+  handle(IPC.prompterStart, async (_event, id: unknown) => {
+    if (typeof id !== "string") return false;
+    const script = (await notesOf("script").list()).find((note) => note.id === id);
+    if (!script?.text.trim()) return false;
+    startPrompter(script);
+    return true;
+  });
+  listen(IPC.prompterStop, () => stopPrompter());
+  handle(IPC.prompterRunning, () => prompting);
+  handle(IPC.prompterCurrent, async () => {
+    const note = prompting
+      ? (await notesOf("script").list()).find((item) => item.id === prompting)
+      : undefined;
+    return note ? { id: note.id, text: note.text, settings: prompterSettings(note) } : null;
   });
   handle(IPC.notesRemove, async (_event, kind: unknown, id: unknown) => {
     if (typeof id === "string") await notesOf(kind).remove(id);
@@ -927,6 +1090,8 @@ async function start(): Promise<void> {
     if (typeof page !== "string") return;
     const script = (to as Navigation).script;
     openMainWindow({ page, ...(typeof script === "string" ? { script } : {}) });
+    // A draft sent to the teleprompter opens as a script, in its own window, ready to read or change.
+    if (typeof script === "string") openScriptWindow(script);
   });
   listen(IPC.draftsOpen, (_event, id: unknown) => {
     if (typeof id === "string") openDraftsWindow(id);
